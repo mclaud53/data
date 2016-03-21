@@ -1,0 +1,27 @@
+{
+  "name": "frog-data",
+  "version": "0.1.0",
+  "authors": [
+    "Georgii Matvieiev<georgii.matvieiev@gmail.com>"
+  ],
+  "keywords": [
+    "typescript",
+    "entity",
+    "collection",
+    "node"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "src",
+    "test",
+    "tests",
+    "typings"
+  ],
+  "dependencies": {
+    "frog-event-dispatcher": "https://github.com/mclaud53/event-dispatcher.git#develop",
+    "node-uuid": "~1.4.7"
+  }
+}
