@@ -1,10 +1,10 @@
-import validate = require('./Validate');
-import filter = require('./Filter');
+/// <reference path="../../typings/main.d.ts" />
+
+import validate = require('frog-validate');
+import filter = require('frog-filter');
 
 export class Field implements validate.Validate<any>, filter.Filter<any>
 {
-
-	private _name: string;
 
 	private _defaultValue: any;
 
@@ -14,19 +14,13 @@ export class Field implements validate.Validate<any>, filter.Filter<any>
 
 	private _errors: string[] = [];
 
-	public constructor(name: string, defaultValue: any, filterList: filter.Filter<any>[] = [], validateList: validate.Validate<any>[] = [])
+	public constructor(defaultValue: any, filterList: filter.Filter<any>[] = [], validateList: validate.Validate<any>[] = [])
 	{
-		this._name = name;
 		this._defaultValue = defaultValue;
 		this._filterList = filterList;
 		this._validateList = validateList;
 	}
 	
-	public get name(): string
-	{
-		return this._name;
-	}
-
 	public get defaultValue(): any
 	{
 		return this._defaultValue;

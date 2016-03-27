@@ -21,7 +21,6 @@
     "typings"
   ],
   "dependencies": {
-    "frog-event-dispatcher": "https://github.com/mclaud53/event-dispatcher.git#develop",
-    "node-uuid": "~1.4.7"
+    "frog-event-dispatcher": "~1.2.1"
   }
 }

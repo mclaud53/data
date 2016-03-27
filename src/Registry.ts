@@ -3,19 +3,19 @@ import ugi = require('./UUIDGeneratorImpl');
 
 export class Registry
 {
-	private static _instance: Registry;
+	private static _instance: Registry = null;
 
 	public static getInstance(): Registry
 	{
-		if (null === this._instance) {
-			this._instance = new Registry();
+		if (null === Registry._instance) {
+			Registry._instance = new Registry();
 		}
-		return this._instance;
+		return Registry._instance;
 	}
 
 	public static setInstance(value: Registry): void
 	{
-		this._instance = value;
+		Registry._instance = value;
 	}
 	
 
