@@ -115,39 +115,25 @@ export class Entity extends base.Base
 		var i: number,
 			j: number,
 			name: string,
-			relation: rel.Relation,
-			relTypes: rel.RelationType[] = [rel.RelationType.BelongsTo];
+			field: string,
+			relation: rel.Relation;
 
-		// for (i = 0; i < relations.length; i++) {
-		// 	relation = relations[i];
-		// 	name = relation.name;
+		for (name in relations) {
+			if (this.fieldsNames.indexOf(name) > -1) {
+				throw new Error('Relation ' + name + ' already declared in field list of model: ' + this.name);
+			}
+			relation = relations[name];
 
-		// 	if (this._relationsNames.indexOf(name) > -1) {
-		// 		throw new Error('Duplicate declaration of relation: ' + name);
-		// 	}
+			for (field in relation.fieldsMap) {
+				if (this.fieldsNames.indexOf(field) === -1) {
+					throw new Error('Field ' + field + ' isn\'t registered in model ' + this.name + ' for relation ' + name);
+				}
+			}
 
-		// 	if (relTypes.indexOf(relation.type) > -1) {
-		// 		if (!relation.foreignField) {
-		// 			throw new Error('For relation of type ' + rel.RelationType[relation.type] + ' foreignKey must be specified!');
-		// 		}
-
-		// 		if (relation.foreignField instanceof Array) {
-		// 			for (j = 0; j < relation.foreignField.length; j++) {
-		// 				if (this.fieldsNames.indexOf(relation.foreignField[j]) === -1) {
-		// 					throw new Error('Foreign field ' + relation.foreignField[j] + ' of relation ' + name + ' isn\'t declared in model ' + this.name);
-		// 				}
-		// 			}
-		// 		} else {
-		// 			if (this.fieldsNames.indexOf(relation.foreignField) === -1) {
-		// 				throw new Error('Foreign field ' + relation.foreignField + ' of relation ' + name + ' isn\'t declared in model ' + this.name);
-		// 			}
-		// 		}
-		// 	}
-
-		// 	this._name2Relation[name] = relations[i];
-		// 	this._relationsNames.push(name);
-		// 	this._related[name] = null;
-		// }
+			this._name2Relation[name] = relation;
+			this._relationsNames.push(name);
+			this._related[name] = null;
+		}
 	}
 
 	public get id(): any
@@ -322,10 +308,21 @@ export class Entity extends base.Base
 		return this.hasRelation(name) ? this._name2Relation[name] : null;
 	}
 
-	public getRelationName(modelName: string, relationType: rel.RelationType): string
+	public findRelationName(entityName: string, relationType: rel.RelationType): string
 	{
-		throw new Error('Method getRelationName not implemented yet');
-		// return null;
+		var i: number,
+			name: string,
+			relation: rel.Relation;
+
+		for (i = 0; i < this.relationsNames.length; i++) {
+			name = this.relationsNames[i];
+			relation = this._name2Relation[name];
+			if ((relation.entityName === entityName) && (relation.type === relationType)) {
+				return name;
+			}
+		}
+
+		return null;
 	}
 
 	public hasRelation(name: string): boolean

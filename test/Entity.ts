@@ -1,6 +1,7 @@
 /// <reference path="../typings/main.d.ts" />
 import col = require('../src/Collection');
 import fil = require('../src/field/Field');
+import rel = require('../src/Relation');
 import ent = require('../src/Entity');
 import colev = require('../src/event/CollectionEvent');
 import entev = require('../src/event/EntityEvent');
@@ -13,9 +14,23 @@ describe('Entity', function() {
 			[key:string]: fil.Field
 		} = {
 			id: new fil.Field(0),
-			title: new fil.Field('')
+			title: new fil.Field(''),
+			foreignId: new fil.Field(0)
 		},
-		primary: string[] = ['id'];
+		primary: string[] = ['id'],
+		relations: {
+			[key:string]: rel.Relation
+		} = {
+			belongsTo: new rel.Relation(rel.RelationType.BelongsTo, 'belongsToEntity', {
+				foreignId: 'primaryId'
+			}),
+			hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+				id: 'foreingId'
+			}),
+			hasMany: new rel.Relation(rel.RelationType.HasMany, 'hasManyEntity', {
+				id: 'foreingId'
+			})
+		};
 
 	it('creation', function() {
 		var instance: ent.Entity = new ent.Entity(name, fields, primary);
@@ -25,7 +40,7 @@ describe('Entity', function() {
 		assert.equal(instance.id, 0, 'The wrong id of entity');
 		assert.equal(instance.id instanceof Array, false, 'The id has a wrong type');
 		//assert.equal(instance.readOnly, false, 'The wrong readOnly flag value');
-		assert.equal(instance.fieldsNames.join(', '), 'id, title', 'The wrong fields names of entity');
+		assert.equal(instance.fieldsNames.join(', '), 'id, title, foreignId', 'The wrong fields names of entity');
 		assert.equal(instance.primaryNames, 'id', 'The wrong primary fields names of entity');
 	});
 
@@ -115,7 +130,72 @@ describe('Entity', function() {
 
 		assert.equal(instance.get('title'), 'title', 'The field id has a wrong value');
 		assert.equal(instance.get('title', true), 'title', 'The field id has a wrong initial value');
+	});
 
+	it('throw error if name of relation same as name of field', function () {
+		var instance: ent.Entity,
+			actual: boolean = false;
+
+		try {
+			instance = new ent.Entity(name, fields, primary, {
+				id: new rel.Relation(rel.RelationType.BelongsTo, 'someEntity', {})
+			});
+		} catch (e) {
+			actual = true;
+		}
+
+		assert.equal(actual, true, 'If name of relation same as name of field then throw error');
+	});
+
+	it('throw error if name of foreign field isn\'t exist in field list', function () {
+		var instance: ent.Entity,
+			actual: boolean = false;
+
+		try {
+			instance = new ent.Entity(name, fields, primary, {
+				someRelation: new rel.Relation(rel.RelationType.BelongsTo, 'someEntity', {
+					someField: 'someOtherField'
+				})
+			});
+		} catch (e) {
+			actual = true;
+		}
+
+		assert.equal(actual, true, 'If name of field isn\'t in list of fields then throw error');
+	});
+
+	it('hasRelation', function() {
+		var instance: ent.Entity = new ent.Entity(name, fields, primary, relations, {
+				id: 3,
+				title: 'title'
+			});
+
+		assert.equal(instance.hasRelation('belongsTo'), true, 'The relation "belongsTo" must be exists');
+		assert.equal(instance.hasRelation('hasOne'), true, 'The relation "hasOne" must be exists');
+		assert.equal(instance.hasRelation('hasMany'), true, 'The relation "hasMany" must be exists');
+		assert.equal(instance.hasRelation('someAny'), false, 'The relation "someAny" must not be exists');
+	});
+
+	it('getRelation', function() {
+		var instance: ent.Entity = new ent.Entity(name, fields, primary, relations, {
+				id: 3,
+				title: 'title'
+			});
+
+		assert.equal(instance.getRelation('belongsTo'), relations['belongsTo'], 'The relation "belongsTo" are wrong');
+		assert.equal(instance.getRelation('hasOne'), relations['hasOne'], 'The relation "hasOne" are wrong');
+		assert.equal(instance.getRelation('hasMany'), relations['hasMany'], 'The relation "hasMany" are wrong');
 	});	
 
+	it('getRelation', function() {
+		var instance: ent.Entity = new ent.Entity(name, fields, primary, relations, {
+				id: 3,
+				title: 'title'
+			});
+
+		assert.equal(instance.findRelationName('belongsToEntity', rel.RelationType.BelongsTo), 'belongsTo', 'The relation "belongsTo" are wrong');
+		assert.equal(instance.findRelationName('hasOneEntity', rel.RelationType.HasOne), 'hasOne', 'The relation "hasOne" are wrong');
+		assert.equal(instance.findRelationName('hasManyEntity', rel.RelationType.HasMany), 'hasMany', 'The relation "hasMany" are wrong');
+		assert.equal(instance.findRelationName('belongsToEntity', rel.RelationType.HasOne), null, 'If relation are not declared method "findRelationName" must return null');
+	});	
 });
