@@ -23,7 +23,7 @@ describe('Entity', function() {
 		} = {
 			belongsTo: new rel.Relation(rel.RelationType.BelongsTo, 'belongsToEntity', {
 				foreignId: 'primaryId'
-			}),
+			}, true),
 			hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
 				id: 'foreingId'
 			}),
@@ -198,4 +198,89 @@ describe('Entity', function() {
 		assert.equal(instance.findRelationName('hasManyEntity', rel.RelationType.HasMany), 'hasMany', 'The relation "hasMany" are wrong');
 		assert.equal(instance.findRelationName('belongsToEntity', rel.RelationType.HasOne), null, 'If relation are not declared method "findRelationName" must return null');
 	});	
+
+	it('throw error if setRelation called with a wrong entity name', function () {
+		var belongsTo: ent.Entity = new ent.Entity('someWrongEntity', {
+				primaryId: new fil.Field(0)
+			}, ['primaryId'], {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+					primaryId: 'foreingId'
+				})
+			}, {primaryId: 5}),
+			instance: ent.Entity = new ent.Entity(name, fields, primary, relations),
+			actual: boolean = false;
+
+		try {
+			instance.setRelated('belongsTo', belongsTo);
+		} catch (e) {
+			actual = true;
+		}
+
+		assert.equal(actual, true, 'The method setRelated must throw error if try to pass wrong entity/collection');
+	});
+
+	it('setRelated (belongsTo)', function () {
+		var belongsTo: ent.Entity = new ent.Entity('belongsToEntity', {
+				primaryId: new fil.Field(0)
+			}, ['primaryId'], {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+					primaryId: 'foreingId'
+				})
+			}, {primaryId: 5}),
+			instance: ent.Entity = new ent.Entity(name, fields, primary, relations);
+
+		assert.equal(instance.hasRelated('belongsTo'), false, 'The new entity has no related entities');
+		assert.equal(instance.setRelated('belongsTo', belongsTo), true, 'The assign releated failed');
+		assert.equal(instance.hasRelated('belongsTo'), true, 'The entity must have related entity');
+		assert.equal(instance.get('foreignId'), 5, 'The foreign key must be updated while set relation');
+	});
+
+	it('setRelated (belongsTo) throw error if pass collection instead entity', function () {
+		var instance: ent.Entity = new ent.Entity(name, fields, primary, relations),
+			actual: boolean = false;
+
+		try {
+			instance.setRelated('belongsTo', new col.Collection('belongsToEntity'));
+		} catch (e) {
+			actual = true;
+		}
+
+		assert.equal(actual, true, 'Entity must throw error if pass collection instead entity');
+	});
+
+	it('setRelated (belongsTo) relayEvents', function () {
+		var belongsTo: ent.Entity = new ent.Entity('belongsToEntity', {
+				primaryId: new fil.Field(0),
+				value: new fil.Field(0)
+			}, ['primaryId'], {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+					primaryId: 'foreignId'
+				})
+			}, {primaryId: 5}),
+			instance: ent.Entity = new ent.Entity(name, fields, primary, relations),
+			actualCallCount: number = 0;
+
+		instance.setRelated('belongsTo', belongsTo);
+		instance.addListener(function (e: entev.EntityEvent): void {
+			actualCallCount++;
+		}, this, 'belongsToEntity:changed:value');
+		belongsTo.set('value', 5);
+		assert.equal(actualCallCount, 1, 'Entity must relay events from related entities');
+	});	
+
+	it('setRelated (belongsTo) update cascade', function () {
+		var belongsTo: ent.Entity = new ent.Entity('belongsToEntity', {
+				primaryId: new fil.Field(0)
+			}, ['primaryId'], {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+					primaryId: 'foreingId'
+				})
+			}, {primaryId: 5}),
+			instance: ent.Entity = new ent.Entity(name, fields, primary, relations);
+
+		instance.setRelated('belongsTo', belongsTo);
+		assert.equal(instance.get('foreignId'), 5, 'Foreign key has a wrong value');
+		belongsTo.set('primaryId', 12);
+		assert.equal(instance.get('foreignId'), 12, 'BelongsTo relation must be updated cascade');
+	});		
 });

@@ -14,9 +14,24 @@ export class CollectionEvent extends fed.Event<col.Collection>
 		return 'beforeAdd';
 	}
 
+	public static get BEFORE_CLEAR(): string
+	{
+		return 'beforeClear';
+	}
+
 	public static get BEFORE_REMOVE(): string
 	{
 		return 'beforeRemove';
+	}
+
+	public static get BEFORE_REVERT(): string
+	{
+		return 'beforeRevert';
+	}
+
+	public static get CLEARED(): string
+	{
+		return 'cleared';
 	}
 
 	public static get REMOVED(): string
@@ -24,16 +39,29 @@ export class CollectionEvent extends fed.Event<col.Collection>
 		return 'removed';
 	}
 
-	private _entites: ent.Entity[];
+	public static get REVERTED(): string
+	{
+		return 'reverted';
+	}
 
-	public constructor(type: fed.EventType, target: col.Collection, entites: ent.Entity[], cancellable: boolean, options?: Object)
+	private _addedEntites: ent.Entity[];
+	private _removedEntites: ent.Entity[];
+
+	public constructor(type: fed.EventType, target: col.Collection, addedEntites: ent.Entity[], removedEntites: ent.Entity[], cancellable: boolean, options?: Object)
 	{
 		super(type, target, cancellable, options);
-		this._entites = entites;
+		this._addedEntites = addedEntites;
+		this._removedEntites = removedEntites;
 	}
 
-	public get entites(): ent.Entity[]
+	public get addedEntites(): ent.Entity[]
 	{
-		return this._entites;
+		return this._addedEntites;
 	}
+
+	public get removedEntites(): ent.Entity[]
+	{
+		return this._removedEntites;
+	}
+
 }

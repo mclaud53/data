@@ -11,11 +11,9 @@ export class Collection extends base.Base
 
 	private _uuid: string;
 
-	private _tmp1: en.Entity[] = [];
+	private _initialEntities: en.Entity[];
 
-	private _tmp2: en.Entity[] = [];
-
-	private _entities: en.Entity[];
+	private _currentEntities: en.Entity[];
 
 	private _readOnly: boolean = false;
 
@@ -27,10 +25,11 @@ export class Collection extends base.Base
 
 		this._name = name;
 		if (null !== entities) {
-			this._entities = entities;
+			this._initialEntities = entities;
 		} else {
-			this._entities = [];
+			this._initialEntities = [];
 		}
+		this._currentEntities = this._initialEntities.slice();
 		this._relayEntityEvents = relayEvents;
 		this._readOnly = readOnly;
 		if (null === uuid) {
@@ -43,6 +42,36 @@ export class Collection extends base.Base
 		if (this._relayEntityEvents && this.length) {
 			this.relayAll(this._entities);
 		} 
+	}
+
+	public get added(): en.Entity[]
+	{
+		var i: number,
+			entities: en.Entity[] = this._entities,
+			ret: en.Entity[] = [];
+
+		for (i = 0; i < entities.length; i++) {
+			if (this._initialEntities.indexOf(entities[i]) === -1) {
+				ret.push(entities[i]);
+			}
+		}
+
+		return ret;
+	}
+
+	public get removed(): en.Entity[]
+	{
+		var i: number,
+			entities: en.Entity[] = this._entities,
+			ret: en.Entity[] = [];
+
+		for (i = 0; i < this._initialEntities.length; i++) {
+			if (entities.indexOf(this._initialEntities[i]) === -1) {
+				ret.push(entities[i]);
+			}
+		}
+
+		return ret;
 	}
 
 	public get name(): string
@@ -66,10 +95,7 @@ export class Collection extends base.Base
 			return true;
 		}
 
-		this._tmp1.length = 0;
-		this._tmp1.push(entity);
-
-		return this.addEntities(this._tmp1, options);
+		return this.addEntities([entity], options);
 	}
 
 	public addEntities(entities: en.Entity[], options: boolean | Object = {}): boolean
@@ -77,16 +103,15 @@ export class Collection extends base.Base
 		var i: number,
 			event: ce.CollectionEvent,
 			eventType: string,
-			_entities: en.Entity[] = this._tmp2;
+			addedEntities: en.Entity[] = [];
 
-		_entities.length = 0;
 		for (i = 0; i < entities.length; i++) {
 			if (!this.hasEntity(entities[i])) {
-				_entities.push(entities[i]);
+				addedEntities.push(entities[i]);
 			}
 		}
 
-		if (0 === _entities.length) {
+		if (0 === addedEntities.length) {
 			return true;
 		}
 
@@ -97,7 +122,7 @@ export class Collection extends base.Base
 		if (false !== options) {
 			eventType = this.name + this.separator + ce.CollectionEvent.BEFORE_ADD;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, _entities, true, options);
+				event = new ce.CollectionEvent(eventType, this, addedEntities, [], true, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
 					return false;
@@ -106,17 +131,17 @@ export class Collection extends base.Base
 		}
 
 		if (this._relayEntityEvents) {
-			this.relayAll(_entities);
+			this.relayAll(addedEntities);
 		}
 
-		for (i = 0; i < _entities.length; i++) {
-			this._entities.push(_entities[i]);
+		for (i = 0; i < addedEntities.length; i++) {
+			this._entities.push(addedEntities[i]);
 		}
 
 		if (false !== options) {
 			eventType = this.name + this.separator + ce.CollectionEvent.ADDED;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, _entities, false, options);
+				event = new ce.CollectionEvent(eventType, this, addedEntities, [], false, options);
 				this.dispatch(event);
 			}
 		}
@@ -140,10 +165,7 @@ export class Collection extends base.Base
 			return true;
 		}
 
-		this._tmp1.length = 0;
-		this._tmp1.push(entity);
-
-		return this.removeEntities(this._tmp1, options);
+		return this.removeEntities([entity], options);
 	}
 
 	public removeEntities(entities: en.Entity[], options: boolean | Object = {}): boolean
@@ -152,27 +174,26 @@ export class Collection extends base.Base
 			index: number,
 			event: ce.CollectionEvent,
 			eventType: string,
-			_entities: en.Entity[] = this._tmp2;
+			removedEntities: en.Entity[] = [];
 
-		_entities.length = 0;
 		for (i = 0; i < entities.length; i++) {
 			if (this.hasEntity(entities[i])) {
-				_entities.push(entities[i]);
+				removedEntities.push(entities[i]);
 			}
 		}
 
-		if (0 === _entities.length) {
+		if (0 === this.length) {
 			return true;
 		}
 
-		if (this._readOnly) {
+		if (this.readOnly) {
 			return false;
 		}
 
 		if (false !== options) {
 			eventType = this.name + this.separator + ce.CollectionEvent.BEFORE_REMOVE;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, _entities, true, options);
+				event = new ce.CollectionEvent(eventType, this, [], removedEntities, true, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
 					return false;
@@ -181,11 +202,11 @@ export class Collection extends base.Base
 		}
 
 		if (this._relayEntityEvents) {
-			this.unrelayAll(_entities);
+			this.unrelayAll(removedEntities);
 		}
 
-		for (i = 0; i < _entities.length; i++) {
-			index = this.indexOf(_entities[i]);
+		for (i = 0; i < removedEntities.length; i++) {
+			index = this.indexOf(removedEntities[i]);
 			if (index > -1) {
 				this._entities.splice(index, 1);
 			}
@@ -194,7 +215,7 @@ export class Collection extends base.Base
 		if (false !== options) {
 			eventType = this.name + this.separator + ce.CollectionEvent.REMOVED;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, _entities, false, options);
+				event = new ce.CollectionEvent(eventType, this, [], removedEntities, false, options);
 				this.dispatch(event);
 			}
 		}
@@ -204,28 +225,32 @@ export class Collection extends base.Base
 
 	public removeAllEntities(options: boolean | Object = {}): boolean
 	{
+		return this.clear(options);
+	}
+
+	public clear(options: boolean | Object = {}): boolean
+	{
 		var i: number,
 			event: ce.CollectionEvent,
 			eventType: string,
-			_entities: en.Entity[] = this._tmp2;
+			removedEntities: en.Entity[] = [];
 
 		if (0 === this.length) {
 			return true;
 		}
 
-		if (this._readOnly) {
+		if (this.readOnly) {
 			return false;
 		}
 
-		_entities.length = 0;
 		for (i = 0; i < this._entities.length; i++) {
-			_entities.push(this._entities[i]);
+			removedEntities.push(this._entities[i]);
 		}
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.BEFORE_REMOVE;
+			eventType = this.name + this.separator + ce.CollectionEvent.BEFORE_CLEAR;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, _entities, true, options);
+				event = new ce.CollectionEvent(eventType, this, [], removedEntities, true, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
 					return false;
@@ -234,18 +259,43 @@ export class Collection extends base.Base
 		}
 
 		if (this._relayEntityEvents) {
-			this.unrelayAll(this._entities);
+			this.unrelayAll(removedEntities);
 		}
 		this._entities.length = 0;
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.REMOVED;
+			eventType = this.name + this.separator + ce.CollectionEvent.CLEARED;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, _entities, false, options);
+				event = new ce.CollectionEvent(eventType, this, [], removedEntities, false, options);
 				this.dispatch(event);
 			}
 		}
 
 		return true;
+	}
+
+	public flush(): void
+	{
+		var i: number;
+		this._initialEntities.length = 0;
+		for (i = 0; i < this._currentEntities.length; i++) {
+			this._initialEntities.push(this._currentEntities[i]);
+		}
+	}
+
+	public revert(options: boolean | Object = {}): boolean
+	{
+		if (!this.dirty) {
+			return true;
+		}
+
+		if (this.readOnly) {
+			return false;
+		}
+	}
+
+	protected get _entities(): en.Entity[]
+	{
+		return this._currentEntities;
 	}
 }

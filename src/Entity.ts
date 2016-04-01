@@ -18,6 +18,8 @@ export class Entity extends base.Base
 
 	private _uuid: string;
 
+	private _readOnly: boolean;
+
 	private _name2Field: { [key: string]: field.Field; } = {};
 
 	private _primaryNames: string[];
@@ -33,14 +35,6 @@ export class Entity extends base.Base
 	private _initialState: EntityState = {};
 
 	private _currentState: EntityState = {};
-
-	private _tmpFields: string[] = [];
-
-	private _tmpState: EntityState = {};
-
-	private _tmpStateNew: EntityState = {};
-
-	private _tmpStateOld: EntityState = {};
 
 	public constructor(name: string,
 		fields: { [key: string]: field.Field; },
@@ -69,6 +63,8 @@ export class Entity extends base.Base
 		}
 
 		this._uuid = uuid;
+
+		this._readOnly = readOnly;
 	}
 
 	private _initFields(fields: { [key: string]: field.Field; }, primary: Primary, data: EntityState = null): void
@@ -79,7 +75,7 @@ export class Entity extends base.Base
 			value: any;
 
 		if (null === data) {
-			data = this._tmpState;
+			data = {};
 		}
 
 		for (name in fields) {
@@ -178,9 +174,14 @@ export class Entity extends base.Base
 		return this._uuid;
 	}
 
+	public get readOnly(): boolean
+	{
+		return this._readOnly;
+	}
+
 	public get(field: string, initial: boolean = false): any
 	{
-		if (!this._name2Field.hasOwnProperty(field)) {
+		if (this.fieldsNames.indexOf(field) === -1) {
 			throw new Error('Field don\'t exist ' + field);
 		}
 
@@ -204,15 +205,9 @@ export class Entity extends base.Base
 		return this.setState(state, options);
 	}
 
-	public getState(initial: boolean = false, copy: boolean = false): EntityState
+	public getState(initial: boolean = false): EntityState
 	{
-		var ret: EntityState;
-
-		if (copy) {
-			ret = {};
-		} else {
-			ret = this._tmpState;
-		}
+		var ret: EntityState = {};
 
 		ret = this._fillState(ret, initial);
 
@@ -223,13 +218,11 @@ export class Entity extends base.Base
 	{
 		var i: number,
 			field: string,
-			fields: string[] = this._tmpFields,
+			fields: string[] = [],
 			e: entityEvent.EntityEvent,
 			events: any,
-			oldState: EntityState = this._fillState(this._tmpStateOld),
-			newState: EntityState = this._fillState(this._tmpStateNew);
-
-		fields.length = 0;
+			oldState: EntityState = this._fillState({}),
+			newState: EntityState = this._fillState({});
 
 		for (i = 0; i < this.fieldsNames.length; i++) {
 			field = this.fieldsNames[i];
@@ -249,6 +242,10 @@ export class Entity extends base.Base
 
 		if (0 === fields.length) {
 			return true;
+		}
+
+		if (this.readOnly) {
+			return false;
 		}
 
 		if (false !== options) {
@@ -346,19 +343,21 @@ export class Entity extends base.Base
 	public setRelated(name: string, value: base.Base, options: boolean | Object = {}, updateRelated: boolean = true): boolean
 	{
 		var events: any,
-			state: EntityState,
-			relation: rel.Relation,
-			related: base.Base,
-			backwardRealtion: rel.Relation,
-			backwardRealtionName: string,
+			relation: rel.Relation = this.getRelation(name),
 			e: relEvent.RelationEvent,
-			newRelation: base.Base = value,
-			oldRelation: base.Base = this.getRelated(name);
+			newRelated: base.Base = value,
+			oldRelated: base.Base = this.getRelated(name);
 
-		// @todo
+		if (value.name !== relation.entityName) {
+			throw new Error('Relation must has name: ' + relation.entityName + ' passed model with name: ' + value.name);
+		}
 
 		if (this._related[name] === value) {
 			return true;
+		}
+
+		if (this.readOnly) {
+			return false;
 		}
 
 		if (false !== options) {
@@ -372,7 +371,7 @@ export class Entity extends base.Base
 			};
 
 			if (this.willDispatch(events)) {
-				e = new relEvent.RelationEvent(events, this, name, newRelation, oldRelation, true, options);
+				e = new relEvent.RelationEvent(events, this, name, newRelated, oldRelated, true, options);
 				this.dispatch(e);
 				if (e.isDefaultPrevented) {
 					return false;
@@ -380,47 +379,25 @@ export class Entity extends base.Base
 			}
 		}
 
-		// state = this.getState();
-		// relation = this.getRelation(name);
+		switch (relation.type) {
+			case rel.RelationType.BelongsTo:
+				if (!this._assignBelongsTo(name, relation, newRelated, oldRelated, options, updateRelated)) {
+					return false;
+				}
+				break;
 
-		// if (oldRelation) {
-		// 	if (relation.relayEvents) {
-		// 		oldRelation.unrelay(this);
-		// 	}
+			case rel.RelationType.HasOne:
+				if (!this._assignHasOne(name, relation, newRelated, oldRelated, options, updateRelated)) {
+					return false;
+				}
+				break;
 
-		// 	switch (relation.type) {
-		// 		case rel.RelationType.BelongsTo:
-		// 			if (oldRelation instanceof Entity) {
-		// 				backwardRealtionName = oldRelation.getRelationName(this.name, rel.RelationType.HasOne);
-		// 				if (null !== backwardRealtionName) {
-		// 					if (oldRelation.setRelated(backwardRealtionName, null, options, false)) {
-		// 						return false;
-		// 					}
-		// 				}
-		// 			}
-					
-		// 			break;
-
-		// 		case rel.RelationType.HasOne:
-		// 			break;
-
-		// 		case rel.RelationType.HasMany:
-		// 			break;
-		// 	}
-
-		// }
-
-		// if (newRelation) {
-
-		// } else {
-
-		// }
-
-		// if (!this.setState(state, options)) {
-		// 	return false;
-		// }
-
-		this._related[name] = value;
+			case rel.RelationType.HasMany:
+				if (!this._assignHasMany(name, relation, newRelated, oldRelated, options, updateRelated)) {
+					return false;
+				}
+				break;
+		}
 
 		if (false !== options) {
 			events = {
@@ -433,7 +410,7 @@ export class Entity extends base.Base
 			};
 
 			if (this.willDispatch(events)) {
-				e = new relEvent.RelationEvent(events, this, name, newRelation, oldRelation, false, options);
+				e = new relEvent.RelationEvent(events, this, name, newRelated, oldRelated, false, options);
 				this.dispatch(e);
 			}
 		}
@@ -441,7 +418,7 @@ export class Entity extends base.Base
 		return true;
 	}
 
-	public clear(): Entity
+	public clear(): boolean
 	{
 		var i: number,
 			field: string;
@@ -456,10 +433,10 @@ export class Entity extends base.Base
 
 		this.revert();
 
-		return this;
+		return true;
 	}
 
-	public revert(): Entity
+	public revert(): boolean
 	{
 		var i: number,
 			field: string;
@@ -472,10 +449,10 @@ export class Entity extends base.Base
 			}
 		}
 
-		return this;
+		return true;
 	}
 
-	public flush(): Entity
+	public flush(): void
 	{
 		var i: number,
 			field: string;
@@ -491,8 +468,210 @@ export class Entity extends base.Base
 		}
 
 		this.revert();
+	}
 
-		return this;
+	private onRelatedEntityChanged(e: entityEvent.EntityEvent, extra: Object): void
+	{
+		var name: string = extra['name'],
+			field: string,
+			relation: rel.Relation = this.getRelation(name),
+			related: Entity = e.target,
+			state: EntityState = this.getState();
+
+		for (field in relation.fieldsMap) {
+			state[field] = related.get(relation.fieldsMap[field]);
+		}
+
+		if (!this.setState(state, e.options)) {
+			// @todo
+		}
+	}
+
+	private _assignBelongsTo(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean
+	{
+		var i: number,
+			field: string,
+			related: base.Base,
+			tmpRelated: base.Base,
+			backwardRelationName: string,
+			newState: EntityState = this.getState(),
+			oldState: EntityState = this.getState(),
+			fields: string[] = [],
+			events: Object,
+			token: string,
+			suspended: base.Base[] = [],
+			ret: boolean = true;
+
+		token = this.suspend(true);
+		suspended.push(this);
+		try {
+			if (ret && (oldRelated instanceof Entity)) {
+				oldRelated.suspend(true, token);
+				suspended.push(oldRelated);
+				if (relation.relayEvents) {
+					this.unrelay(oldRelated);
+				}
+
+				if (updateRelated) {
+					backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasOne);
+					if (null !== backwardRelationName) {
+						if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
+							ret = false;
+						}
+					} else {
+						backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasMany);
+						if (null !== backwardRelationName) {
+							related = oldRelated.getRelated(backwardRelationName);
+							if (related instanceof col.Collection) {
+								related.suspend(true, token);
+								suspended.push(related);
+								if (!related.removeEntity(this, options)) {
+									ret = false;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if (ret) {
+				if (newRelated instanceof Entity) {
+					newRelated.suspend(true, token);
+					suspended.push(newRelated);
+					for (field in relation.fieldsMap) {
+						fields.push(relation.fieldsMap[field]);
+						newState[field] = newRelated.get(relation.fieldsMap[field]);
+					}
+
+					if (!this.setState(newState, options)) {
+						ret = false;
+					}
+
+					if (updateRelated) {
+						backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasOne);
+						if (null !== backwardRelationName) {
+							tmpRelated = newRelated.getRelated(backwardRelationName);
+							if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
+								ret = false;
+							}
+						} else {
+							backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasMany);
+							if (null !== backwardRelationName) {
+								related = newRelated.getRelated(backwardRelationName);
+								if (related instanceof col.Collection) {
+									related.suspend(true, token);
+									suspended.push(related);
+									if (!related.addEntity(this, options)) {
+										ret = false;
+									}
+								}
+							}
+						}
+					}
+				} else if (null !== newRelated) {
+					throw new Error('Relation "' + name + '" in entity "' + this.name + '" must be instance of Entity');
+				} else {
+					for (field in relation.fieldsMap) {
+						fields.push(relation.fieldsMap[field]);
+						newState[field] = this._name2Field[field].defaultValue;
+					}
+
+					if (!this.setState(newState, options)) {
+						ret = false;
+					}
+				}			
+			}
+		} catch (error) {
+			ret = false;
+			throw error;
+		} finally {
+			if (!ret) {
+				this.setState(oldState, false);
+
+				if (updateRelated && (newRelated instanceof Entity)) {
+					backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasOne);
+					if (null !== backwardRelationName) {
+						if (tmpRelated) {
+							newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
+						}
+					} else {
+						backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasMany);
+						if (null !== backwardRelationName) {
+							related = newRelated.getRelated(backwardRelationName);
+							if (related instanceof col.Collection) {
+								related.removeEntity(this, false);
+							}
+						}
+					}
+				}
+
+				if (oldRelated instanceof Entity) {
+					if (updateRelated) {
+						backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasOne);
+						if (null !== backwardRelationName) {
+							oldRelated.setRelated(backwardRelationName, this, false, false);
+						} else {
+							backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasMany);
+							if (null !== backwardRelationName) {
+								related = oldRelated.getRelated(backwardRelationName);
+								if (related instanceof col.Collection) {
+									related.addEntity(this, false);
+								}
+							}
+						}
+					}
+					if (relation.relayEvents) {
+						this.relay(oldRelated);
+					}
+				}
+
+				for (i = suspended.length - 1; i >= 0; i--) {
+					suspended[i].purgeQueue(token);
+					suspended[i].resume(token);
+				}
+
+			}
+		}
+
+		if (ret) {
+			this._related[name] = newRelated;
+
+			events = {
+				[relation.entityName]: {
+					[entityEvent.EntityEvent.CHANGED]: fields
+				}
+			};
+
+			if (oldRelated) {
+				oldRelated.removeListener(this.onRelatedEntityChanged, this, events);
+			}
+			if (newRelated) {
+				newRelated.addListener(this.onRelatedEntityChanged, this, events, {
+					extra: {
+						name: name
+					}
+				});
+				if (relation.relayEvents) {
+					this.relay(newRelated);
+				}
+			}
+
+			for (i = suspended.length - 1; i >= 0; i--) {
+				suspended[i].resume(token);
+			}
+		}
+
+		return ret;
+	}
+
+	private _assignHasOne(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean
+	{
+		return true;
+	}
+
+	private _assignHasMany(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean
+	{
+		return true;
 	}
 
 	private _fillState(state: EntityState, initial: boolean = false): EntityState

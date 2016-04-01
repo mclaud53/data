@@ -92,7 +92,7 @@ describe('Collection', function() {
 		assert.equal(actualCall.join(', '), 'example:beforeRemove, example:removed', 'Collection don\'t dispatch events');
 	});
 
-	it('removeAll events', function() {
+	it('clear events', function() {
 		var name: string = 'example',
 			entity: ent.Entity = new ent.Entity(name, {}, []),
 			instance: col.Collection = new col.Collection(name, [entity]),
@@ -103,7 +103,7 @@ describe('Collection', function() {
 		}, this);
 
 		instance.removeAllEntities();
-		assert.equal(actualCall.join(', '), 'example:beforeRemove, example:removed', 'Collection don\'t dispatch events');
+		assert.equal(actualCall.join(', '), 'example:beforeClear, example:cleared', 'Collection don\'t dispatch events');
 	});
 
 	it('relay events from entities', function() {
@@ -159,14 +159,14 @@ describe('Collection', function() {
 		assert.equal(instance.length, 1, 'Collection could not be empty');
 	});
 
-	it('cancel removeAll', function() {
+	it('cancel clear', function() {
 		var name: string = 'example',
 			entity: ent.Entity = new ent.Entity(name, {}, []),
 			instance: col.Collection = new col.Collection(name, [entity]);
 
 		instance.addListener(function(e: colev.CollectionEvent) {
 			e.preventDefault();
-		}, this, name + ':beforeRemove');
+		}, this, name + ':beforeClear');
 
 		assert.equal(instance.removeAllEntities(), false, 'Cancelling of add failed');
 		assert.equal(instance.length, 1, 'Collection could not be empty');
