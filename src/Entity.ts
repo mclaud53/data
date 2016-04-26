@@ -629,7 +629,6 @@ export class Entity extends base.Base
 					suspended[i].purgeQueue(token);
 					suspended[i].resume(token);
 				}
-
 			}
 		}
 
@@ -666,7 +665,97 @@ export class Entity extends base.Base
 
 	private _assignHasOne(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean
 	{
-		return true;
+		var i: number,
+			tmpRelated: base.Base,
+			backwardRelationName: string,
+			token: string,
+			suspended: base.Base[] = [],
+			ret: boolean = true;
+
+		token = this.suspend(true);
+		suspended.push(this);
+		try {
+			if (ret && (oldRelated instanceof Entity)) {
+				oldRelated.suspend(true, token);
+				suspended.push(oldRelated);
+				if (relation.relayEvents) {
+					this.unrelay(oldRelated);
+				}
+
+				if (updateRelated) {
+					backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
+					if (null !== backwardRelationName) {
+						if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
+							ret = false;
+						}
+					}
+				}
+			}
+
+			if (ret) {
+				if (newRelated instanceof Entity) {
+					newRelated.suspend(true, token);
+					suspended.push(newRelated);
+
+					if (updateRelated) {
+						backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
+						if (null !== backwardRelationName) {
+							tmpRelated = newRelated.getRelated(backwardRelationName);
+							if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
+								ret = false;
+							}
+						}
+					}
+				} else if (null !== newRelated) {
+					throw new Error('Relation "' + name + '" in entity "' + this.name + '" must be instance of Entity');
+				}		
+			}
+		} catch (error) {
+			ret = false;
+			throw error;
+		} finally {
+			if (!ret) {
+				if (updateRelated && (newRelated instanceof Entity)) {
+					backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
+					if (null !== backwardRelationName) {
+						if (tmpRelated) {
+							newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
+						}
+					}
+				}
+
+				if (oldRelated instanceof Entity) {
+					if (updateRelated) {
+						backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
+						if (null !== backwardRelationName) {
+							oldRelated.setRelated(backwardRelationName, this, false, false);
+						}
+					}
+					if (relation.relayEvents) {
+						this.relay(oldRelated);
+					}
+				}
+
+				for (i = suspended.length - 1; i >= 0; i--) {
+					suspended[i].purgeQueue(token);
+					suspended[i].resume(token);
+				}
+			}
+		}
+
+		if (ret) {
+			this._related[name] = newRelated;
+
+			if (relation.relayEvents && newRelated) {
+				this.relay(newRelated);
+			}
+
+			for (i = suspended.length - 1; i >= 0; i--) {
+				suspended[i].resume(token);
+			}
+		}
+
+		return ret;
 	}
 
 	private _assignHasMany(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean

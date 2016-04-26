@@ -26,10 +26,10 @@ describe('Entity', function() {
 			}, true),
 			hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
 				id: 'foreingId'
-			}),
+			}, true),
 			hasMany: new rel.Relation(rel.RelationType.HasMany, 'hasManyEntity', {
 				id: 'foreingId'
-			})
+			}, true)
 		};
 
 	it('creation', function() {
@@ -203,7 +203,7 @@ describe('Entity', function() {
 		var belongsTo: ent.Entity = new ent.Entity('someWrongEntity', {
 				primaryId: new fil.Field(0)
 			}, ['primaryId'], {
-				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, name, {
 					primaryId: 'foreingId'
 				})
 			}, {primaryId: 5}),
@@ -223,7 +223,7 @@ describe('Entity', function() {
 		var belongsTo: ent.Entity = new ent.Entity('belongsToEntity', {
 				primaryId: new fil.Field(0)
 			}, ['primaryId'], {
-				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, name, {
 					primaryId: 'foreingId'
 				})
 			}, {primaryId: 5}),
@@ -253,7 +253,7 @@ describe('Entity', function() {
 				primaryId: new fil.Field(0),
 				value: new fil.Field(0)
 			}, ['primaryId'], {
-				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, name, {
 					primaryId: 'foreignId'
 				})
 			}, {primaryId: 5}),
@@ -272,7 +272,7 @@ describe('Entity', function() {
 		var belongsTo: ent.Entity = new ent.Entity('belongsToEntity', {
 				primaryId: new fil.Field(0)
 			}, ['primaryId'], {
-				hasOne: new rel.Relation(rel.RelationType.HasOne, 'hasOneEntity', {
+				hasOne: new rel.Relation(rel.RelationType.HasOne, name, {
 					primaryId: 'foreingId'
 				})
 			}, {primaryId: 5}),
@@ -282,5 +282,56 @@ describe('Entity', function() {
 		assert.equal(instance.get('foreignId'), 5, 'Foreign key has a wrong value');
 		belongsTo.set('primaryId', 12);
 		assert.equal(instance.get('foreignId'), 12, 'BelongsTo relation must be updated cascade');
+	});
+
+	it('setRelated (hasOne)', function () {
+		var hasOne: ent.Entity = new ent.Entity('hasOneEntity', {
+				primaryId: new fil.Field(0),
+				foreingId: new fil.Field(0)
+			}, ['primaryId'], {
+				belongsTo: new rel.Relation(rel.RelationType.BelongsTo, name, {
+					foreingId: 'id'
+				})
+			}, {primaryId: 5}),
+			instance: ent.Entity = new ent.Entity(name, fields, primary, relations, {id: 8});
+
+		assert.equal(instance.hasRelated('hasOne'), false, 'The new entity has no related entities');
+		assert.equal(instance.setRelated('hasOne', hasOne), true, 'The assign releated failed');
+		assert.equal(instance.hasRelated('hasOne'), true, 'The entity must have related entity');
+		assert.equal(hasOne.get('foreingId'), 8, 'The foreign key must be updated while set relation');
+	});
+
+	it('setRelated (hasOne) throw error if pass collection instead entity', function () {
+		var instance: ent.Entity = new ent.Entity(name, fields, primary, relations),
+			actual: boolean = false;
+
+		try {
+			instance.setRelated('hasOne', new col.Collection('hasOneEntity'));
+		} catch (e) {
+			actual = true;
+		}
+
+		assert.equal(actual, true, 'Entity must throw error if pass collection instead entity');
+	});
+
+	it('setRelated (hasOne) relayEvents', function () {
+		var hasOne: ent.Entity = new ent.Entity('hasOneEntity', {
+				primaryId: new fil.Field(0),
+				foreingId: new fil.Field(0),
+				value: new fil.Field(0)
+			}, ['primaryId'], {
+				belongsTo: new rel.Relation(rel.RelationType.BelongsTo, name, {
+					foreingId: 'id'
+				})
+			}, {primaryId: 5}),
+			instance: ent.Entity = new ent.Entity(name, fields, primary, relations),
+			actualCallCount: number = 0;
+
+		instance.setRelated('hasOne', hasOne);
+		instance.addListener(function (e: entev.EntityEvent): void {
+			actualCallCount++;
+		}, this, 'hasOneEntity:changed:value');
+		hasOne.set('value', 5);
+		assert.equal(actualCallCount, 1, 'Entity must relay events from related entities');
 	});		
 });
