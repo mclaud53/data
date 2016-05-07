@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 require('sinomocha')();
 
+import {Registry} from '../src/Registry';
 import {Collection} from '../src/Collection';
 import {Field} from '../src/meta/Field';
 import {Relation} from '../src/meta/Relation';
@@ -20,7 +21,8 @@ import {SimpleEntity} from '../dummy/SimpleEntity';
 
 describe('Entity', function()
 {
-	FieldTypeRegistry.getInstance().register<any>([
+	var fieldTypeRegistry: FieldTypeRegistry = Registry.getInstance().getFieldTypeRegistry();
+	fieldTypeRegistry.register<any>([
 			new BooleanFieldType(),
 			new FloatFieldType(),
 			new IntegerFieldType(),

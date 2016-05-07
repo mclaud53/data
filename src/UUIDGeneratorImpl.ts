@@ -1,6 +1,6 @@
-import ug = require('./UUIDGenerator');
+import {UUIDGenerator} from './UUIDGenerator';
 
-export class UUIDGeneratorImpl implements ug.UUIDGenerator
+export class UUIDGeneratorImpl implements UUIDGenerator
 {
 	private static _sequence: number = 0;
 

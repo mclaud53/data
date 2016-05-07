@@ -1,7 +1,6 @@
 /// <reference path="../typings/main.d.ts" />
 
 import {EventDispatcher, Event} from 'frog-event-dispatcher';
-// import {Field} from './meta/Field';
 import {RelationType} from './meta/RelationType';
 import {Relation} from './meta/Relation';
 import {EntityMeta} from './meta/EntityMeta';

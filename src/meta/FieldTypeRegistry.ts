@@ -2,19 +2,9 @@ import {FieldType} from './FieldType';
 
 export class FieldTypeRegistry
 {
-	private static _instance: FieldTypeRegistry = null;
-
 	private _name2FieldTypeMap: {
 		[key: string]: FieldType<any>;
 	} = {};
-
-	public static getInstance(): FieldTypeRegistry
-	{
-		if (null === this._instance) {
-			this._instance = new FieldTypeRegistry();
-		}
-		return FieldTypeRegistry._instance;
-	}
 
 	public getByName<T>(name: string): FieldType<T>
 	{
