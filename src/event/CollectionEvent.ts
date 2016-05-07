@@ -1,8 +1,8 @@
-import fed = require('frog-event-dispatcher');
-import ent = require('../Entity');
-import col = require('../Collection');
+import {Event, EventType} from 'frog-event-dispatcher';
+import {Entity} from '../Entity';
+import {Collection} from '../Collection';
 
-export class CollectionEvent extends fed.Event<col.Collection>
+export class CollectionEvent extends Event<Collection>
 {
 	public static get ADDED(): string
 	{
@@ -44,22 +44,22 @@ export class CollectionEvent extends fed.Event<col.Collection>
 		return 'reverted';
 	}
 
-	private _addedEntites: ent.Entity[];
-	private _removedEntites: ent.Entity[];
+	private _addedEntites: Entity[];
+	private _removedEntites: Entity[];
 
-	public constructor(type: fed.EventType, target: col.Collection, addedEntites: ent.Entity[], removedEntites: ent.Entity[], cancellable: boolean, options?: Object)
+	public constructor(type: EventType, target: Collection, addedEntites: Entity[], removedEntites: Entity[], cancellable: boolean, options?: Object)
 	{
 		super(type, target, cancellable, options);
 		this._addedEntites = addedEntites;
 		this._removedEntites = removedEntites;
 	}
 
-	public get addedEntites(): ent.Entity[]
+	public get addedEntites(): Entity[]
 	{
 		return this._addedEntites;
 	}
 
-	public get removedEntites(): ent.Entity[]
+	public get removedEntites(): Entity[]
 	{
 		return this._removedEntites;
 	}

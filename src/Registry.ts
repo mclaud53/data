@@ -1,5 +1,5 @@
-import ug = require('./UUIDGenerator');
-import ugi = require('./UUIDGeneratorImpl');
+import {UUIDGenerator} from './UUIDGenerator';
+import {UUIDGeneratorImpl} from './UUIDGeneratorImpl';
 
 export class Registry
 {
@@ -19,17 +19,17 @@ export class Registry
 	}
 	
 
-	private _uuidGenerator: ug.UUIDGenerator = null;
+	private _uuidGenerator: UUIDGenerator = null;
 
-	public getUUIDGenerator(): ug.UUIDGenerator
+	public getUUIDGenerator(): UUIDGenerator
 	{
 		if (null === this._uuidGenerator) {
-			this._uuidGenerator = new ugi.UUIDGeneratorImpl();
+			this._uuidGenerator = new UUIDGeneratorImpl();
 		}
 		return this._uuidGenerator;
 	}
 
-	public setUUIDGenerator(value: ug.UUIDGenerator): Registry
+	public setUUIDGenerator(value: UUIDGenerator): Registry
 	{
 		this._uuidGenerator = value;
 		return this;

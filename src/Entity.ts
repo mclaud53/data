@@ -1,65 +1,44 @@
 /// <reference path="../typings/main.d.ts" />
 
-import fed = require('frog-event-dispatcher');
-import base = require('./Base');
-import reg = require('./Registry');
-import field = require('./field/Field');
-import entityEvent = require('./event/EntityEvent');
-import relEvent = require('./event/RelationEvent');
-import rel = require('./Relation');
-import col = require('./Collection');
+import {EventDispatcher, Event} from 'frog-event-dispatcher';
+// import {Field} from './meta/Field';
+import {RelationType} from './meta/RelationType';
+import {Relation} from './meta/Relation';
+import {EntityMeta} from './meta/EntityMeta';
+import {Registry} from './Registry';
+import {EntityEvent} from './event/EntityEvent';
+import {RelationEvent} from './event/RelationEvent';
+import {Collection} from './Collection';
 
 export type EntityState = { [key: string]: any; };
-export type Primary = string | string[];
 
-export class Entity extends base.Base
+export abstract class Entity extends EventDispatcher<Event<any>, any>
 {
-	private _name: string;
+	protected _entityMeta: EntityMeta;
 
 	private _uuid: string;
 
 	private _readOnly: boolean;
 
-	private _name2Field: { [key: string]: field.Field; } = {};
-
-	private _primaryNames: string[];
-
-	private _fieldsNames: string[] = [];
-
-	private _name2Relation: {[key: string]: rel.Relation} = {};
-
-	private _relationsNames: string[] = [];
-
-	private _related: { [key: string]: base.Base } = {};
+	private _related: { [key: string]: (Entity | Collection) } = {};
 
 	private _initialState: EntityState = {};
 
 	private _currentState: EntityState = {};
 
-	public constructor(name: string,
-		fields: { [key: string]: field.Field; },
-		primary: Primary,
-		relations: { [key: string]: rel.Relation; } = null,
-		data: EntityState = null,
-		isNew: boolean = true,
-		readOnly: boolean = false,
-		uuid: string = null)
+	public constructor(data: EntityState = null, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
 	{
 		super();
 
-		this._name = name;
+		this._entityMeta = this.initEntityMeta();
 
-		this._initFields(fields, primary, data);
-
-		if (null !== relations) {
-			this._initRelations(relations);
-		}
+		this._initData(data);
 
 		if (null === uuid) {
-			uuid = reg.Registry
+			uuid = Registry
 				.getInstance()
 				.getUUIDGenerator()
-				.uuid(name);
+				.uuid(this._entityMeta.name);
 		}
 
 		this._uuid = uuid;
@@ -67,69 +46,34 @@ export class Entity extends base.Base
 		this._readOnly = readOnly;
 	}
 
-	private _initFields(fields: { [key: string]: field.Field; }, primary: Primary, data: EntityState = null): void
+	protected abstract initEntityMeta(): EntityMeta;
+
+	private _initData(data: EntityState = null): void
 	{
 		var i: number,
 			name: string,
-			field: field.Field,
+			// field: Field,
 			value: any;
 
 		if (null === data) {
 			data = {};
 		}
 
-		for (name in fields) {
-			field = fields[name];
+		for (i = 0; i < this.entityMeta.fields.length; i++) {
+			name = this.entityMeta.fields[i].name;
 			if (data.hasOwnProperty(name)) {
 				value = data[name]
 			} else {
-				value = field.defaultValue;
+				value = this.entityMeta.fields[i].defaultValue;
 			}
 
-			this._name2Field[name] = field;
-			this._fieldsNames.push(name);
 			this._initialState[name] = value;
-		}
-
-		if (primary instanceof Array) {
-			for (i = 0; i < primary.length; i++) {
-				if (this.fieldsNames.indexOf(primary[i]) === -1) {
-					throw new Error('Primary field ' + primary[i] + ' isn\'t declared in model: ' + this.name);
-				}
-			}
-			this._primaryNames = primary;
-		} else {
-			if (this.fieldsNames.indexOf(primary) === -1) {
-				throw new Error('Primary field ' + primary + ' isn\'t declared in model: ' + this.name);
-			}
-			this._primaryNames = [primary];
 		}
 	}
 
-	private _initRelations(relations: { [key: string]: rel.Relation; }): void
+	public get entityMeta(): EntityMeta
 	{
-		var i: number,
-			j: number,
-			name: string,
-			field: string,
-			relation: rel.Relation;
-
-		for (name in relations) {
-			if (this.fieldsNames.indexOf(name) > -1) {
-				throw new Error('Relation ' + name + ' already declared in field list of model: ' + this.name);
-			}
-			relation = relations[name];
-
-			for (field in relation.fieldsMap) {
-				if (this.fieldsNames.indexOf(field) === -1) {
-					throw new Error('Field ' + field + ' isn\'t registered in model ' + this.name + ' for relation ' + name);
-				}
-			}
-
-			this._name2Relation[name] = relation;
-			this._relationsNames.push(name);
-			this._related[name] = null;
-		}
+		return this._entityMeta;
 	}
 
 	public get id(): any
@@ -137,36 +81,20 @@ export class Entity extends base.Base
 		var i: number,
 			ret: any;
 
-		if (1 === this.primaryNames.length) {
-			ret = this.get(this.primaryNames[0]);
-		} else {
-			ret = [];
-			for (i = 0; i < this.primaryNames.length; i++) {
-				ret.push(this.get(this.primaryNames[i]));
+		if (this._entityMeta.primaryKey instanceof Array) {
+			if (1 === this._entityMeta.primaryKey.length) {
+				ret = this.get(this._entityMeta.primaryKey[0]);
+			} else {
+				ret = [];
+				for (i = 0; i < this._entityMeta.primaryKey.length; i++) {
+					ret.push(this.get(this._entityMeta.primaryKey[i]));
+				}
 			}
+		} else {
+			ret = this.get(this._entityMeta.primaryKey as string);
 		}
-
+		
 		return ret;
-	}
-
-	public get primaryNames(): string[]
-	{
-		return this._primaryNames;
-	}
-
-	public get fieldsNames(): string[]
-	{
-		return this._fieldsNames;
-	}
-
-	public get relationsNames(): string[]
-	{
-		return this._relationsNames;
-	}
-
-	public get name(): string
-	{
-		return this._name;
 	}
 
 	public get uuid(): string
@@ -181,7 +109,7 @@ export class Entity extends base.Base
 
 	public get(field: string, initial: boolean = false): any
 	{
-		if (this.fieldsNames.indexOf(field) === -1) {
+		if (this.entityMeta.fieldNames.indexOf(field) === -1) {
 			throw new Error('Field don\'t exist ' + field);
 		}
 
@@ -194,7 +122,7 @@ export class Entity extends base.Base
 
 	public set(field: string, value: any, options: boolean | Object = {}): boolean
 	{
-		if (!this._name2Field.hasOwnProperty(field)) {
+		if (this.entityMeta.fieldNames.indexOf(field) === -1) {
 			throw new Error('Field don\'t exist ' + field);
 		}
 
@@ -219,18 +147,18 @@ export class Entity extends base.Base
 		var i: number,
 			field: string,
 			fields: string[] = [],
-			e: entityEvent.EntityEvent,
+			e: EntityEvent,
 			events: any,
 			oldState: EntityState = this._fillState({}),
 			newState: EntityState = this._fillState({});
 
-		for (i = 0; i < this.fieldsNames.length; i++) {
-			field = this.fieldsNames[i];
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
 			if (!state.hasOwnProperty(field)) {
 				continue;
 			}
 
-			state[field] = this._name2Field[field].filter(state[field]);
+			state[field] = this.entityMeta.fieldMap[field].type.filter(state[field]);
 
 			if (state[field] === newState[field]) {
 				continue;
@@ -250,19 +178,19 @@ export class Entity extends base.Base
 
 		if (false !== options) {
 			events = [
-				entityEvent.EntityEvent.BEFORE_CHANGE,
+				EntityEvent.BEFORE_CHANGE,
 				{
-					[this.name]: [
-						entityEvent.EntityEvent.BEFORE_CHANGE,
+					[this.entityMeta.name]: [
+						EntityEvent.BEFORE_CHANGE,
 						{
-							[entityEvent.EntityEvent.BEFORE_CHANGE]: fields
+							[EntityEvent.BEFORE_CHANGE]: fields
 						}
 					]
 				}
 			];
 
 			if (this.willDispatch(events)) {
-				e = new entityEvent.EntityEvent(events, this, fields, newState, oldState, true, options);
+				e = new EntityEvent(events, this, fields, newState, oldState, true, options);
 				this.dispatch(e);
 				if (e.isDefaultPrevented) {
 					return false;
@@ -283,16 +211,16 @@ export class Entity extends base.Base
 
 		if (false !== options) {
 			events = {
-				[this.name]: [
-					entityEvent.EntityEvent.CHANGED,
+				[this.entityMeta.name]: [
+					EntityEvent.CHANGED,
 					{
-						[entityEvent.EntityEvent.CHANGED]: fields
+						[EntityEvent.CHANGED]: fields
 					}
 				]
 			};
 
 			if (this.willDispatch(events)) {
-				e = new entityEvent.EntityEvent(events, this, fields, newState, oldState, false, options);
+				e = new EntityEvent(events, this, fields, newState, oldState, false, options);
 				this.dispatch(e);
 			}
 		}
@@ -300,57 +228,30 @@ export class Entity extends base.Base
 		return true;
 	}
 
-	public getRelation(name: string): rel.Relation
-	{
-		return this.hasRelation(name) ? this._name2Relation[name] : null;
-	}
-
-	public findRelationName(entityName: string, relationType: rel.RelationType): string
-	{
-		var i: number,
-			name: string,
-			relation: rel.Relation;
-
-		for (i = 0; i < this.relationsNames.length; i++) {
-			name = this.relationsNames[i];
-			relation = this._name2Relation[name];
-			if ((relation.entityName === entityName) && (relation.type === relationType)) {
-				return name;
-			}
-		}
-
-		return null;
-	}
-
-	public hasRelation(name: string): boolean
-	{
-		return this.relationsNames.indexOf(name) > -1;
-	}
-
-	public getRelated(name: string): base.Base
+	public getRelated(name: string): (Entity | Collection)
 	{
 		return this.hasRelated(name) ? this._related[name] : null;
 	}
 
 	public hasRelated(name: string): boolean
 	{
-		if (!this.hasRelation(name)) {
-			throw new Error('Relation with name: ' + name + ' isn\'t exist in entity ' + this.name);
+		if (!this.entityMeta.hasRelation(name)) {
+			throw new Error('Relation with name: ' + name + ' isn\'t exist in entity ' + this.entityMeta.name);
 		}
 		return !!this._related[name];
 	}
 
-	public setRelated(name: string, value: base.Base, options: boolean | Object = {}, updateRelated: boolean = true): boolean
+	public setRelated(name: string, value: (Entity | Collection), options: boolean | Object = {}, updateRelated: boolean = true): boolean
 	{
 		var events: any,
-			relation: rel.Relation = this.getRelation(name),
-			e: relEvent.RelationEvent,
-			newRelated: base.Base = value,
-			oldRelated: base.Base = this.getRelated(name);
+			relation: Relation = this.entityMeta.getRelation(name),
+			e: RelationEvent,
+			newRelated: (Entity | Collection) = value,
+			oldRelated: (Entity | Collection) = this.getRelated(name);
 
-		if (value.name !== relation.entityName) {
-			throw new Error('Relation must has name: ' + relation.entityName + ' passed model with name: ' + value.name);
-		}
+		// if (value.name !== relation.entityName) {
+		// 	throw new Error('Relation must has name: ' + relation.entityName + ' passed model with name: ' + value.name);
+		// }
 
 		if (this._related[name] === value) {
 			return true;
@@ -362,16 +263,16 @@ export class Entity extends base.Base
 
 		if (false !== options) {
 			events = {
-				[this.name]: [
-					relEvent.RelationEvent.BEFORE_CHANGE,
+				[this.entityMeta.name]: [
+					RelationEvent.BEFORE_CHANGE,
 					{
-						[relEvent.RelationEvent.BEFORE_CHANGE]: [name]
+						[RelationEvent.BEFORE_CHANGE]: [name]
 					}
 				]
 			};
 
 			if (this.willDispatch(events)) {
-				e = new relEvent.RelationEvent(events, this, name, newRelated, oldRelated, true, options);
+				e = new RelationEvent(events, this, name, newRelated, oldRelated, true, options);
 				this.dispatch(e);
 				if (e.isDefaultPrevented) {
 					return false;
@@ -380,19 +281,19 @@ export class Entity extends base.Base
 		}
 
 		switch (relation.type) {
-			case rel.RelationType.BelongsTo:
+			case RelationType.BelongsTo:
 				if (!this._assignBelongsTo(name, relation, newRelated, oldRelated, options, updateRelated)) {
 					return false;
 				}
 				break;
 
-			case rel.RelationType.HasOne:
+			case RelationType.HasOne:
 				if (!this._assignHasOne(name, relation, newRelated, oldRelated, options, updateRelated)) {
 					return false;
 				}
 				break;
 
-			case rel.RelationType.HasMany:
+			case RelationType.HasMany:
 				if (!this._assignHasMany(name, relation, newRelated, oldRelated, options, updateRelated)) {
 					return false;
 				}
@@ -401,16 +302,16 @@ export class Entity extends base.Base
 
 		if (false !== options) {
 			events = {
-				[this.name]: [
-					relEvent.RelationEvent.CHANGED,
+				[this.entityMeta.name]: [
+					RelationEvent.CHANGED,
 					{
-						[relEvent.RelationEvent.CHANGED]: [name]
+						[RelationEvent.CHANGED]: [name]
 					}
 				]
 			};
 
 			if (this.willDispatch(events)) {
-				e = new relEvent.RelationEvent(events, this, name, newRelated, oldRelated, false, options);
+				e = new RelationEvent(events, this, name, newRelated, oldRelated, false, options);
 				this.dispatch(e);
 			}
 		}
@@ -423,11 +324,11 @@ export class Entity extends base.Base
 		var i: number,
 			field: string;
 
-		for (i = 0; i < this.fieldsNames.length; i++) {
-			field = this.fieldsNames[i];
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
 
 			if (this._initialState.hasOwnProperty(field)) {
-				this._initialState[field] = this._name2Field[field].defaultValue;
+				this._initialState[field] = this.entityMeta.fieldMap[field].defaultValue;
 			}
 		}
 
@@ -441,8 +342,8 @@ export class Entity extends base.Base
 		var i: number,
 			field: string;
 
-		for (i = 0; i < this.fieldsNames.length; i++) {
-			field = this.fieldsNames[i];
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
 
 			if (this._currentState.hasOwnProperty(field)) {
 				delete this._currentState[field];
@@ -457,8 +358,8 @@ export class Entity extends base.Base
 		var i: number,
 			field: string;
 
-		for (i = 0; i < this.fieldsNames.length; i++) {
-			field = this.fieldsNames[i];
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
 
 			if (!this._currentState.hasOwnProperty(field)) {
 				continue;
@@ -470,295 +371,299 @@ export class Entity extends base.Base
 		this.revert();
 	}
 
-	private onRelatedEntityChanged(e: entityEvent.EntityEvent, extra: Object): void
+	private onRelatedEntityChanged(e: EntityEvent, extra: Object): void
 	{
 		var name: string = extra['name'],
 			field: string,
-			relation: rel.Relation = this.getRelation(name),
+			relation: Relation = this.entityMeta.getRelation(name),
 			related: Entity = e.target,
 			state: EntityState = this.getState();
 
-		for (field in relation.fieldsMap) {
-			state[field] = related.get(relation.fieldsMap[field]);
-		}
+		// for (field in relation.fieldsMap) {
+		// 	state[field] = related.get(relation.fieldsMap[field]);
+		// }
 
 		if (!this.setState(state, e.options)) {
 			// @todo
 		}
 	}
 
-	private _assignBelongsTo(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean
+	private _assignBelongsTo(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, updateRelated: boolean): boolean
 	{
-		var i: number,
-			field: string,
-			related: base.Base,
-			tmpRelated: base.Base,
-			backwardRelationName: string,
-			newState: EntityState = this.getState(),
-			oldState: EntityState = this.getState(),
-			fields: string[] = [],
-			events: Object,
-			token: string,
-			suspended: base.Base[] = [],
-			ret: boolean = true;
+		return true;
 
-		token = this.suspend(true);
-		suspended.push(this);
-		try {
-			if (ret && (oldRelated instanceof Entity)) {
-				oldRelated.suspend(true, token);
-				suspended.push(oldRelated);
-				if (relation.relayEvents) {
-					this.unrelay(oldRelated);
-				}
+		// var i: number,
+		// 	field: string,
+		// 	related: (Entity | Collection),
+		// 	tmpRelated: (Entity | Collection),
+		// 	backwardRelationName: string,
+		// 	newState: EntityState = this.getState(),
+		// 	oldState: EntityState = this.getState(),
+		// 	fields: string[] = [],
+		// 	events: Object,
+		// 	token: string,
+		// 	suspended: (Entity | Collection)[] = [],
+		// 	ret: boolean = true;
 
-				if (updateRelated) {
-					backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasOne);
-					if (null !== backwardRelationName) {
-						if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
-							ret = false;
-						}
-					} else {
-						backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasMany);
-						if (null !== backwardRelationName) {
-							related = oldRelated.getRelated(backwardRelationName);
-							if (related instanceof col.Collection) {
-								related.suspend(true, token);
-								suspended.push(related);
-								if (!related.removeEntity(this, options)) {
-									ret = false;
-								}
-							}
-						}
-					}
-				}
-			}
+		// token = this.suspend(true);
+		// suspended.push(this);
+		// try {
+		// 	if (ret && (oldRelated instanceof Entity)) {
+		// 		oldRelated.suspend(true, token);
+		// 		suspended.push(oldRelated);
+		// 		if (relation.relayEvents) {
+		// 			this.unrelay(oldRelated);
+		// 		}
 
-			if (ret) {
-				if (newRelated instanceof Entity) {
-					newRelated.suspend(true, token);
-					suspended.push(newRelated);
-					for (field in relation.fieldsMap) {
-						fields.push(relation.fieldsMap[field]);
-						newState[field] = newRelated.get(relation.fieldsMap[field]);
-					}
+		// 		if (updateRelated) {
+		// 			backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
+		// 			if (null !== backwardRelationName) {
+		// 				if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
+		// 					ret = false;
+		// 				}
+		// 			} else {
+		// 				backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
+		// 				if (null !== backwardRelationName) {
+		// 					related = oldRelated.getRelated(backwardRelationName);
+		// 					if (related instanceof Collection) {
+		// 						related.suspend(true, token);
+		// 						suspended.push(related);
+		// 						if (!related.removeEntity(this, options)) {
+		// 							ret = false;
+		// 						}
+		// 					}
+		// 				}
+		// 			}
+		// 		}
+		// 	}
 
-					if (!this.setState(newState, options)) {
-						ret = false;
-					}
+		// 	if (ret) {
+		// 		if (newRelated instanceof Entity) {
+		// 			newRelated.suspend(true, token);
+		// 			suspended.push(newRelated);
+		// 			for (field in relation.fieldsMap) {
+		// 				fields.push(relation.fieldsMap[field]);
+		// 				newState[field] = newRelated.get(relation.fieldsMap[field]);
+		// 			}
 
-					if (updateRelated) {
-						backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasOne);
-						if (null !== backwardRelationName) {
-							tmpRelated = newRelated.getRelated(backwardRelationName);
-							if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
-								ret = false;
-							}
-						} else {
-							backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasMany);
-							if (null !== backwardRelationName) {
-								related = newRelated.getRelated(backwardRelationName);
-								if (related instanceof col.Collection) {
-									related.suspend(true, token);
-									suspended.push(related);
-									if (!related.addEntity(this, options)) {
-										ret = false;
-									}
-								}
-							}
-						}
-					}
-				} else if (null !== newRelated) {
-					throw new Error('Relation "' + name + '" in entity "' + this.name + '" must be instance of Entity');
-				} else {
-					for (field in relation.fieldsMap) {
-						fields.push(relation.fieldsMap[field]);
-						newState[field] = this._name2Field[field].defaultValue;
-					}
+		// 			if (!this.setState(newState, options)) {
+		// 				ret = false;
+		// 			}
 
-					if (!this.setState(newState, options)) {
-						ret = false;
-					}
-				}			
-			}
-		} catch (error) {
-			ret = false;
-			throw error;
-		} finally {
-			if (!ret) {
-				this.setState(oldState, false);
+		// 			if (updateRelated) {
+		// 				backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
+		// 				if (null !== backwardRelationName) {
+		// 					tmpRelated = newRelated.getRelated(backwardRelationName);
+		// 					if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
+		// 						ret = false;
+		// 					}
+		// 				} else {
+		// 					backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
+		// 					if (null !== backwardRelationName) {
+		// 						related = newRelated.getRelated(backwardRelationName);
+		// 						if (related instanceof Collection) {
+		// 							related.suspend(true, token);
+		// 							suspended.push(related);
+		// 							if (!related.addEntity(this, options)) {
+		// 								ret = false;
+		// 							}
+		// 						}
+		// 					}
+		// 				}
+		// 			}
+		// 		} else if (null !== newRelated) {
+		// 			throw new Error('Relation "' + name + '" in entity "' + this.entityMeta.name + '" must be instance of Entity');
+		// 		} else {
+		// 			for (field in relation.fieldsMap) {
+		// 				fields.push(relation.fieldsMap[field]);
+		// 				newState[field] = this.entityMeta.fieldMap[field].defaultValue;
+		// 			}
 
-				if (updateRelated && (newRelated instanceof Entity)) {
-					backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasOne);
-					if (null !== backwardRelationName) {
-						if (tmpRelated) {
-							newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
-						}
-					} else {
-						backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.HasMany);
-						if (null !== backwardRelationName) {
-							related = newRelated.getRelated(backwardRelationName);
-							if (related instanceof col.Collection) {
-								related.removeEntity(this, false);
-							}
-						}
-					}
-				}
+		// 			if (!this.setState(newState, options)) {
+		// 				ret = false;
+		// 			}
+		// 		}			
+		// 	}
+		// } catch (error) {
+		// 	ret = false;
+		// 	throw error;
+		// } finally {
+		// 	if (!ret) {
+		// 		this.setState(oldState, false);
 
-				if (oldRelated instanceof Entity) {
-					if (updateRelated) {
-						backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasOne);
-						if (null !== backwardRelationName) {
-							oldRelated.setRelated(backwardRelationName, this, false, false);
-						} else {
-							backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.HasMany);
-							if (null !== backwardRelationName) {
-								related = oldRelated.getRelated(backwardRelationName);
-								if (related instanceof col.Collection) {
-									related.addEntity(this, false);
-								}
-							}
-						}
-					}
-					if (relation.relayEvents) {
-						this.relay(oldRelated);
-					}
-				}
+		// 		if (updateRelated && (newRelated instanceof Entity)) {
+		// 			backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
+		// 			if (null !== backwardRelationName) {
+		// 				if (tmpRelated) {
+		// 					newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
+		// 				}
+		// 			} else {
+		// 				backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
+		// 				if (null !== backwardRelationName) {
+		// 					related = newRelated.getRelated(backwardRelationName);
+		// 					if (related instanceof Collection) {
+		// 						related.removeEntity(this, false);
+		// 					}
+		// 				}
+		// 			}
+		// 		}
 
-				for (i = suspended.length - 1; i >= 0; i--) {
-					suspended[i].purgeQueue(token);
-					suspended[i].resume(token);
-				}
-			}
-		}
+		// 		if (oldRelated instanceof Entity) {
+		// 			if (updateRelated) {
+		// 				backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
+		// 				if (null !== backwardRelationName) {
+		// 					oldRelated.setRelated(backwardRelationName, this, false, false);
+		// 				} else {
+		// 					backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
+		// 					if (null !== backwardRelationName) {
+		// 						related = oldRelated.getRelated(backwardRelationName);
+		// 						if (related instanceof Collection) {
+		// 							related.addEntity(this, false);
+		// 						}
+		// 					}
+		// 				}
+		// 			}
+		// 			if (relation.relayEvents) {
+		// 				this.relay(oldRelated);
+		// 			}
+		// 		}
 
-		if (ret) {
-			this._related[name] = newRelated;
+		// 		for (i = suspended.length - 1; i >= 0; i--) {
+		// 			suspended[i].purgeQueue(token);
+		// 			suspended[i].resume(token);
+		// 		}
+		// 	}
+		// }
 
-			events = {
-				[relation.entityName]: {
-					[entityEvent.EntityEvent.CHANGED]: fields
-				}
-			};
+		// if (ret) {
+		// 	this._related[name] = newRelated;
 
-			if (oldRelated) {
-				oldRelated.removeListener(this.onRelatedEntityChanged, this, events);
-			}
-			if (newRelated) {
-				newRelated.addListener(this.onRelatedEntityChanged, this, events, {
-					extra: {
-						name: name
-					}
-				});
-				if (relation.relayEvents) {
-					this.relay(newRelated);
-				}
-			}
+		// 	events = {
+		// 		[relation.entityName]: {
+		// 			[EntityEvent.CHANGED]: fields
+		// 		}
+		// 	};
 
-			for (i = suspended.length - 1; i >= 0; i--) {
-				suspended[i].resume(token);
-			}
-		}
+		// 	if (oldRelated) {
+		// 		oldRelated.removeListener(this.onRelatedEntityChanged, this, events);
+		// 	}
+		// 	if (newRelated) {
+		// 		newRelated.addListener(this.onRelatedEntityChanged, this, events, {
+		// 			extra: {
+		// 				name: name
+		// 			}
+		// 		});
+		// 		if (relation.relayEvents) {
+		// 			this.relay(newRelated);
+		// 		}
+		// 	}
 
-		return ret;
+		// 	for (i = suspended.length - 1; i >= 0; i--) {
+		// 		suspended[i].resume(token);
+		// 	}
+		// }
+
+		// return ret;
 	}
 
-	private _assignHasOne(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean
+	private _assignHasOne(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, updateRelated: boolean): boolean
 	{
-		var i: number,
-			tmpRelated: base.Base,
-			backwardRelationName: string,
-			token: string,
-			suspended: base.Base[] = [],
-			ret: boolean = true;
+		return true;
+		
+		// var i: number,
+		// 	tmpRelated: (Entity | Collection),
+		// 	backwardRelationName: string,
+		// 	token: string,
+		// 	suspended: (Entity | Collection)[] = [],
+		// 	ret: boolean = true;
 
-		token = this.suspend(true);
-		suspended.push(this);
-		try {
-			if (ret && (oldRelated instanceof Entity)) {
-				oldRelated.suspend(true, token);
-				suspended.push(oldRelated);
-				if (relation.relayEvents) {
-					this.unrelay(oldRelated);
-				}
+		// token = this.suspend(true);
+		// suspended.push(this);
+		// try {
+		// 	if (ret && (oldRelated instanceof Entity)) {
+		// 		oldRelated.suspend(true, token);
+		// 		suspended.push(oldRelated);
+		// 		if (relation.relayEvents) {
+		// 			this.unrelay(oldRelated);
+		// 		}
 
-				if (updateRelated) {
-					backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
-					if (null !== backwardRelationName) {
-						if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
-							ret = false;
-						}
-					}
-				}
-			}
+		// 		if (updateRelated) {
+		// 			backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
+		// 			if (null !== backwardRelationName) {
+		// 				if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
+		// 					ret = false;
+		// 				}
+		// 			}
+		// 		}
+		// 	}
 
-			if (ret) {
-				if (newRelated instanceof Entity) {
-					newRelated.suspend(true, token);
-					suspended.push(newRelated);
+		// 	if (ret) {
+		// 		if (newRelated instanceof Entity) {
+		// 			newRelated.suspend(true, token);
+		// 			suspended.push(newRelated);
 
-					if (updateRelated) {
-						backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
-						if (null !== backwardRelationName) {
-							tmpRelated = newRelated.getRelated(backwardRelationName);
-							if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
-								ret = false;
-							}
-						}
-					}
-				} else if (null !== newRelated) {
-					throw new Error('Relation "' + name + '" in entity "' + this.name + '" must be instance of Entity');
-				}		
-			}
-		} catch (error) {
-			ret = false;
-			throw error;
-		} finally {
-			if (!ret) {
-				if (updateRelated && (newRelated instanceof Entity)) {
-					backwardRelationName = newRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
-					if (null !== backwardRelationName) {
-						if (tmpRelated) {
-							newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
-						}
-					}
-				}
+		// 			if (updateRelated) {
+		// 				backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
+		// 				if (null !== backwardRelationName) {
+		// 					tmpRelated = newRelated.getRelated(backwardRelationName);
+		// 					if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
+		// 						ret = false;
+		// 					}
+		// 				}
+		// 			}
+		// 		} else if (null !== newRelated) {
+		// 			throw new Error('Relation "' + name + '" in entity "' + this.entityMeta.name + '" must be instance of Entity');
+		// 		}		
+		// 	}
+		// } catch (error) {
+		// 	ret = false;
+		// 	throw error;
+		// } finally {
+		// 	if (!ret) {
+		// 		if (updateRelated && (newRelated instanceof Entity)) {
+		// 			backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
+		// 			if (null !== backwardRelationName) {
+		// 				if (tmpRelated) {
+		// 					newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
+		// 				}
+		// 			}
+		// 		}
 
-				if (oldRelated instanceof Entity) {
-					if (updateRelated) {
-						backwardRelationName = oldRelated.findRelationName(this.name, rel.RelationType.BelongsTo);
-						if (null !== backwardRelationName) {
-							oldRelated.setRelated(backwardRelationName, this, false, false);
-						}
-					}
-					if (relation.relayEvents) {
-						this.relay(oldRelated);
-					}
-				}
+		// 		if (oldRelated instanceof Entity) {
+		// 			if (updateRelated) {
+		// 				backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
+		// 				if (null !== backwardRelationName) {
+		// 					oldRelated.setRelated(backwardRelationName, this, false, false);
+		// 				}
+		// 			}
+		// 			if (relation.relayEvents) {
+		// 				this.relay(oldRelated);
+		// 			}
+		// 		}
 
-				for (i = suspended.length - 1; i >= 0; i--) {
-					suspended[i].purgeQueue(token);
-					suspended[i].resume(token);
-				}
-			}
-		}
+		// 		for (i = suspended.length - 1; i >= 0; i--) {
+		// 			suspended[i].purgeQueue(token);
+		// 			suspended[i].resume(token);
+		// 		}
+		// 	}
+		// }
 
-		if (ret) {
-			this._related[name] = newRelated;
+		// if (ret) {
+		// 	this._related[name] = newRelated;
 
-			if (relation.relayEvents && newRelated) {
-				this.relay(newRelated);
-			}
+		// 	if (relation.relayEvents && newRelated) {
+		// 		this.relay(newRelated);
+		// 	}
 
-			for (i = suspended.length - 1; i >= 0; i--) {
-				suspended[i].resume(token);
-			}
-		}
+		// 	for (i = suspended.length - 1; i >= 0; i--) {
+		// 		suspended[i].resume(token);
+		// 	}
+		// }
 
-		return ret;
+		// return ret;
 	}
 
-	private _assignHasMany(name: string, relation: rel.Relation, newRelated: base.Base, oldRelated: base.Base, options: boolean | Object, updateRelated: boolean): boolean
+	private _assignHasMany(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, updateRelated: boolean): boolean
 	{
 		return true;
 	}
@@ -768,8 +673,8 @@ export class Entity extends base.Base
 		var i: number,
 			field: string;
 
-		for (i = 0; i < this.fieldsNames.length; i++) {
-			field = this.fieldsNames[i];
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
 			state[field] = this.get(field, initial);
 		}
 

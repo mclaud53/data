@@ -1,7 +1,7 @@
-import fed = require('frog-event-dispatcher');
-import entity = require('../Entity');
+import {Event, EventType} from 'frog-event-dispatcher';
+import {Entity, EntityState} from '../Entity';
 
-export class EntityEvent extends fed.Event<entity.Entity>
+export class EntityEvent extends Event<Entity>
 {
 	public static get BEFORE_CHANGE(): string
 	{
@@ -14,10 +14,10 @@ export class EntityEvent extends fed.Event<entity.Entity>
 	}
 
 	private _fields: string[];
-	private _newState: entity.EntityState;
-	private _oldState: entity.EntityState;
+	private _newState: EntityState;
+	private _oldState: EntityState;
 
-	public constructor(type: fed.EventType, target: entity.Entity, fields: string[], newState: entity.EntityState, oldState: entity.EntityState, cancellable: boolean, options?: Object)
+	public constructor(type: EventType, target: Entity, fields: string[], newState: EntityState, oldState: EntityState, cancellable: boolean, options?: Object)
 	{
 		super(type, target, cancellable, options);
 		this._fields = fields;
@@ -30,12 +30,12 @@ export class EntityEvent extends fed.Event<entity.Entity>
 		return this._fields;
 	}
 
-	public get newStage(): entity.EntityState
+	public get newStage(): EntityState
 	{
 		return this._newState;
 	}
 
-	public get oldStage(): entity.EntityState
+	public get oldStage(): EntityState
 	{
 		return this._oldState;
 	}

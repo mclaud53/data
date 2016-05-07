@@ -1,29 +1,29 @@
-import fed = require('frog-event-dispatcher');
-import base = require('./Base');
-import reg = require('./Registry');
-import en = require('./Entity');
-import ce = require('./event/CollectionEvent');
+import {EventDispatcher, Event} from 'frog-event-dispatcher';
+import {Registry} from './Registry';
+import {Entity} from './Entity';
+import {CollectionEvent} from './event/CollectionEvent';
+import {CollectionMeta} from './meta/CollectionMeta';
 
-export class Collection extends base.Base
+export abstract class Collection extends EventDispatcher<Event<any>, any>
 {
-
-	private _name: string;
+	private _collectionMeta: CollectionMeta;
 
 	private _uuid: string;
 
-	private _initialEntities: en.Entity[];
+	private _initialEntities: Entity[];
 
-	private _currentEntities: en.Entity[];
+	private _currentEntities: Entity[];
 
 	private _readOnly: boolean = false;
 
 	private _relayEntityEvents: boolean;
 
-	public constructor(name: string, entities: en.Entity[] = null, relayEvents: boolean = false, readOnly: boolean = false, uuid: string = null)
+	public constructor(entities: Entity[] = null, relayEvents: boolean = false, readOnly: boolean = false, uuid: string = null)
 	{
 		super();
 
-		this._name = name;
+		this._collectionMeta = this.initCollectionMeta();
+
 		if (null !== entities) {
 			this._initialEntities = entities;
 		} else {
@@ -33,10 +33,10 @@ export class Collection extends base.Base
 		this._relayEntityEvents = relayEvents;
 		this._readOnly = readOnly;
 		if (null === uuid) {
-			uuid = reg.Registry
+			uuid = Registry
 				.getInstance()
 				.getUUIDGenerator()
-				.uuid(name);
+				.uuid(this._collectionMeta.entityMeta.name);
 		}
 		this._uuid = uuid;
 		if (this._relayEntityEvents && this.length) {
@@ -44,11 +44,13 @@ export class Collection extends base.Base
 		} 
 	}
 
-	public get added(): en.Entity[]
+	protected abstract initCollectionMeta(): CollectionMeta;
+
+	public get added(): Entity[]
 	{
 		var i: number,
-			entities: en.Entity[] = this._entities,
-			ret: en.Entity[] = [];
+			entities: Entity[] = this._entities,
+			ret: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
 			if (this._initialEntities.indexOf(entities[i]) === -1) {
@@ -59,11 +61,11 @@ export class Collection extends base.Base
 		return ret;
 	}
 
-	public get removed(): en.Entity[]
+	public get removed(): Entity[]
 	{
 		var i: number,
-			entities: en.Entity[] = this._entities,
-			ret: en.Entity[] = [];
+			entities: Entity[] = this._entities,
+			ret: Entity[] = [];
 
 		for (i = 0; i < this._initialEntities.length; i++) {
 			if (entities.indexOf(this._initialEntities[i]) === -1) {
@@ -72,11 +74,6 @@ export class Collection extends base.Base
 		}
 
 		return ret;
-	}
-
-	public get name(): string
-	{
-		return this._name;
 	}
 
 	public get length(): number
@@ -89,7 +86,7 @@ export class Collection extends base.Base
 		return this._readOnly;
 	}
 
-	public addEntity(entity: en.Entity, options: boolean | Object = {}): boolean
+	public addEntity(entity: Entity, options: boolean | Object = {}): boolean
 	{
 		if (this.hasEntity(entity)) {
 			return true;
@@ -98,12 +95,12 @@ export class Collection extends base.Base
 		return this.addEntities([entity], options);
 	}
 
-	public addEntities(entities: en.Entity[], options: boolean | Object = {}): boolean
+	public addEntities(entities: Entity[], options: boolean | Object = {}): boolean
 	{
 		var i: number,
-			event: ce.CollectionEvent,
+			event: CollectionEvent,
 			eventType: string,
-			addedEntities: en.Entity[] = [];
+			addedEntities: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
 			if (!this.hasEntity(entities[i])) {
@@ -120,9 +117,9 @@ export class Collection extends base.Base
 		}
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.BEFORE_ADD;
+			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_ADD;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, addedEntities, [], true, options);
+				event = new CollectionEvent(eventType, this, addedEntities, [], true, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
 					return false;
@@ -139,9 +136,9 @@ export class Collection extends base.Base
 		}
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.ADDED;
+			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.ADDED;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, addedEntities, [], false, options);
+				event = new CollectionEvent(eventType, this, addedEntities, [], false, options);
 				this.dispatch(event);
 			}
 		}
@@ -149,17 +146,17 @@ export class Collection extends base.Base
 		return true;
 	}
 
-	public hasEntity(entity: en.Entity): boolean
+	public hasEntity(entity: Entity): boolean
 	{
 		return this.indexOf(entity) > -1;
 	}
 
-	public indexOf(entity: en.Entity): number
+	public indexOf(entity: Entity): number
 	{
 		return this._entities.indexOf(entity);
 	}
 
-	public removeEntity(entity: en.Entity, options: boolean | Object = {}): boolean
+	public removeEntity(entity: Entity, options: boolean | Object = {}): boolean
 	{
 		if (!this.hasEntity(entity)) {
 			return true;
@@ -168,13 +165,13 @@ export class Collection extends base.Base
 		return this.removeEntities([entity], options);
 	}
 
-	public removeEntities(entities: en.Entity[], options: boolean | Object = {}): boolean
+	public removeEntities(entities: Entity[], options: boolean | Object = {}): boolean
 	{
 		var i: number,
 			index: number,
-			event: ce.CollectionEvent,
+			event: CollectionEvent,
 			eventType: string,
-			removedEntities: en.Entity[] = [];
+			removedEntities: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
 			if (this.hasEntity(entities[i])) {
@@ -191,9 +188,9 @@ export class Collection extends base.Base
 		}
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.BEFORE_REMOVE;
+			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_REMOVE;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, [], removedEntities, true, options);
+				event = new CollectionEvent(eventType, this, [], removedEntities, true, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
 					return false;
@@ -213,9 +210,9 @@ export class Collection extends base.Base
 		}
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.REMOVED;
+			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, [], removedEntities, false, options);
+				event = new CollectionEvent(eventType, this, [], removedEntities, false, options);
 				this.dispatch(event);
 			}
 		}
@@ -231,9 +228,9 @@ export class Collection extends base.Base
 	public clear(options: boolean | Object = {}): boolean
 	{
 		var i: number,
-			event: ce.CollectionEvent,
+			event: CollectionEvent,
 			eventType: string,
-			removedEntities: en.Entity[] = [];
+			removedEntities: Entity[] = [];
 
 		if (0 === this.length) {
 			return true;
@@ -248,9 +245,9 @@ export class Collection extends base.Base
 		}
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.BEFORE_CLEAR;
+			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_CLEAR;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, [], removedEntities, true, options);
+				event = new CollectionEvent(eventType, this, [], removedEntities, true, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
 					return false;
@@ -264,9 +261,9 @@ export class Collection extends base.Base
 		this._entities.length = 0;
 
 		if (false !== options) {
-			eventType = this.name + this.separator + ce.CollectionEvent.CLEARED;
+			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.CLEARED;
 			if (this.willDispatch(eventType)) {
-				event = new ce.CollectionEvent(eventType, this, [], removedEntities, false, options);
+				event = new CollectionEvent(eventType, this, [], removedEntities, false, options);
 				this.dispatch(event);
 			}
 		}
@@ -285,16 +282,16 @@ export class Collection extends base.Base
 
 	public revert(options: boolean | Object = {}): boolean
 	{
-		if (!this.dirty) {
-			return true;
-		}
+		// if (!this.dirty) {
+		// 	return true;
+		// }
 
 		if (this.readOnly) {
 			return false;
 		}
 	}
 
-	protected get _entities(): en.Entity[]
+	protected get _entities(): Entity[]
 	{
 		return this._currentEntities;
 	}

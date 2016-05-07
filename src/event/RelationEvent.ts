@@ -1,8 +1,8 @@
-import fed = require('frog-event-dispatcher');
-import entity = require('../Entity');
-import base = require('../Base');
+import {Event, EventType} from 'frog-event-dispatcher';
+import {Entity} from '../Entity';
+import {Collection} from '../Collection';
 
-export class RelationEvent extends fed.Event<entity.Entity>
+export class RelationEvent extends Event<Entity>
 {
 	public static get BEFORE_CHANGE(): string
 	{
@@ -15,10 +15,10 @@ export class RelationEvent extends fed.Event<entity.Entity>
 	}
 
 	private _relationName: string;
-	private _newInstance: base.Base;
-	private _oldInstance: base.Base;
+	private _newInstance: Entity | Collection;
+	private _oldInstance: Entity | Collection;
 
-	public constructor(type: fed.EventType, target: entity.Entity, relationName: string, newInstance: base.Base, oldInstance: base.Base, cancellable: boolean, options?: Object)
+	public constructor(type: EventType, target: Entity, relationName: string, newInstance: Entity | Collection, oldInstance: Entity | Collection, cancellable: boolean, options?: Object)
 	{
 		super(type, target, cancellable, options);
 		this._relationName = relationName;
@@ -31,12 +31,12 @@ export class RelationEvent extends fed.Event<entity.Entity>
 		return this._relationName;
 	}
 
-	public get newInstance(): base.Base
+	public get newInstance(): Entity | Collection
 	{
 		return this._newInstance;
 	}
 
-	public get oldInstance(): base.Base
+	public get oldInstance(): Entity | Collection
 	{
 		return this._oldInstance;
 	}

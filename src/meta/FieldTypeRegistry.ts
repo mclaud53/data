@@ -35,7 +35,7 @@ export class FieldTypeRegistry
 		var i: number;
 		if (fieldType instanceof Array) {
 			for (i = 0; i < fieldType.length; i++) {
-				this.register(fieldType[i]);
+				this.register(fieldType[i], force);
 			}
 		} else {
 			if (this._name2FieldTypeMap.hasOwnProperty(fieldType.name)) {
