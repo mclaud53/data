@@ -14,17 +14,32 @@ import {FloatFieldType} from '../src/meta/type/FloatFieldType';
 import {IntegerFieldType} from '../src/meta/type/IntegerFieldType';
 import {StringFieldType} from '../src/meta/type/StringFieldType';
 
+import {SimpleCollectionMeta} from '../dummy/meta/SimpleCollectionMeta';
+import {SimpleEntityMeta} from '../dummy/meta/SimpleEntityMeta';
 import {SimpleCollection} from '../dummy/SimpleCollection';
 import {SimpleEntity} from '../dummy/SimpleEntity';
 
 describe('Collection', function()
 {
-	var fieldTypeRegistry: FieldTypeRegistry = Registry.getInstance().getFieldTypeRegistry();
-	fieldTypeRegistry.register<any>([
+	Registry.getInstance()
+		.getFieldTypeRegistry()
+		.register<any>([
 			new BooleanFieldType(),
 			new FloatFieldType(),
 			new IntegerFieldType(),
 			new StringFieldType()
+		], true);
+
+	Registry.getInstance()
+		.getMetaRegistry()
+		.register([
+			new SimpleEntityMeta()
+		], true);
+
+	Registry.getInstance()
+		.getMetaRegistry()
+		.register([
+			new SimpleCollectionMeta()
 		], true);
 
 	it('creation', function()

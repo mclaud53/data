@@ -17,16 +17,24 @@ import {FloatFieldType} from '../src/meta/type/FloatFieldType';
 import {IntegerFieldType} from '../src/meta/type/IntegerFieldType';
 import {StringFieldType} from '../src/meta/type/StringFieldType';
 
+import {SimpleEntityMeta} from '../dummy/meta/SimpleEntityMeta';
 import {SimpleEntity} from '../dummy/SimpleEntity';
 
 describe('Entity', function()
 {
-	var fieldTypeRegistry: FieldTypeRegistry = Registry.getInstance().getFieldTypeRegistry();
-	fieldTypeRegistry.register<any>([
+	Registry.getInstance()
+		.getFieldTypeRegistry()
+		.register<any>([
 			new BooleanFieldType(),
 			new FloatFieldType(),
 			new IntegerFieldType(),
 			new StringFieldType()
+		], true);
+
+	Registry.getInstance()
+		.getMetaRegistry()
+		.register([
+			new SimpleEntityMeta()
 		], true);
 
 	it('creation', function()

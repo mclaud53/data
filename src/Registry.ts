@@ -1,6 +1,7 @@
 import {UUIDGenerator} from './UUIDGenerator';
 import {UUIDGeneratorImpl} from './UUIDGeneratorImpl';
 import {FieldTypeRegistry} from './meta/FieldTypeRegistry';
+import {MetaRegistry} from './meta/MetaRegistry';
 
 export class Registry
 {
@@ -22,6 +23,8 @@ export class Registry
 	private _uuidGenerator: UUIDGenerator = null;
 
 	private _fieldTypeRegistry: FieldTypeRegistry = null;
+
+	private _metaRegistry: MetaRegistry = null;
 
 	public getUUIDGenerator(): UUIDGenerator
 	{
@@ -48,6 +51,20 @@ export class Registry
 	public setFieldTypeRegistry(value: FieldTypeRegistry): Registry
 	{
 		this._fieldTypeRegistry = value;
+		return this;
+	}
+
+	public getMetaRegistry(): MetaRegistry
+	{
+		if (null === this._metaRegistry) {
+			this._metaRegistry = new MetaRegistry();
+		}
+		return this._metaRegistry;
+	}
+
+	public setMetaRegistry(value: MetaRegistry): Registry
+	{
+		this._metaRegistry = value;
 		return this;
 	}
 }
