@@ -8,8 +8,6 @@ export class SimpleEntityMeta extends EntityMeta
 {
 	public constructor()
 	{
-		var fieldTypeRegistry: FieldTypeRegistry = Registry.getInstance().getFieldTypeRegistry();
-		
 		super('Simple', SimpleEntity, 'id', [
 			new Field<number>('id', 'integer', 0),
 			new Field<number>('value', 'float', 0.0),

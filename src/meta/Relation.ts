@@ -1,3 +1,4 @@
+import {Registry} from '../Registry';
 import {ForeignKey} from './ForeignKey';
 import {RelationType} from './RelationType';
 import {CollectionMeta} from './CollectionMeta';
@@ -9,7 +10,9 @@ export class Relation
 
 	private _type: RelationType;
 
-	private _relatedMeta: (CollectionMeta | EntityMeta);
+	private _relatedMeta: (CollectionMeta | EntityMeta) = null;
+
+	private _relatedMetaName: string;
 
 	private _foreignKey: ForeignKey;
 
@@ -17,13 +20,30 @@ export class Relation
 
 	public backwardRelation: Relation;
 
-	public constructor(name: string, type: RelationType, relatedMeta: CollectionMeta | EntityMeta, foreignKey: ForeignKey, relayEvents: boolean = false)
+	public constructor(name: string, type: RelationType, relatedMeta: string | CollectionMeta | EntityMeta, foreignKey: ForeignKey, relayEvents: boolean = false)
 	{
 		this._name = name;
 		this._type = type;
-		this._relatedMeta = relatedMeta;
 		this._foreignKey = foreignKey;
 		this._relayEvents = relayEvents;
+
+		if (relatedMeta instanceof EntityMeta) {
+			this._relatedMeta = relatedMeta;
+			this._relatedMetaName = relatedMeta.name;
+		} else if (relatedMeta instanceof CollectionMeta) {
+			this._relatedMeta = relatedMeta;
+			this._relatedMetaName = relatedMeta.entityMeta.name;
+		} else if (RelationType.HasMany === this._type) {
+			this._relatedMetaName = relatedMeta;
+			Registry.getInstance()
+				.getMetaRegistry()
+				.getCollectionDeferred(this._relatedMetaName, this.retrieveRelatedMetaCallback.bind(this));
+		} else {
+			this._relatedMetaName = relatedMeta;
+			Registry.getInstance()
+				.getMetaRegistry()
+				.getEntityDeferred(this._relatedMetaName, this.retrieveRelatedMetaCallback.bind(this));
+		}
 	}
 
 	public get name(): string
@@ -49,6 +69,13 @@ export class Relation
 
 	public get relatedMeta(): CollectionMeta | EntityMeta
 	{
+		if (null === this._relatedMeta) {
+			if (RelationType.HasMany === this._type) {
+				throw new Error('CollectionMeta "' + this._relatedMetaName + '" isn\'t registered yet');
+			} else {
+				throw new Error('EntityMeta "' + this._relatedMetaName + '" isn\'t registered yet');
+			}
+		}
 		return this._relatedMeta;
 	}
 
@@ -85,4 +112,9 @@ export class Relation
 			}
 		}
 	}
+
+	private retrieveRelatedMetaCallback(relatedMeta: (CollectionMeta | EntityMeta)): void
+	{
+		this._relatedMeta = relatedMeta;
+	}		
 }

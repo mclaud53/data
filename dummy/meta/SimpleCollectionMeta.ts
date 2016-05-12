@@ -7,10 +7,6 @@ export class SimpleCollectionMeta extends CollectionMeta
 {
 	public constructor()
 	{
-		var entityMeta: SimpleEntityMeta = Registry.getInstance()
-			.getMetaRegistry()
-			.getEntity('Simple');
-			
-		super(SimpleCollection, entityMeta);
+		super(SimpleCollection, 'Simple');
 	}
 }
