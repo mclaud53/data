@@ -5,8 +5,10 @@ require('sinomocha')();
 import {Registry} from '../src/Registry';
 import {Collection} from '../src/Collection';
 import {Entity} from '../src/Entity';
+import {Transaction} from '../src/Transaction';
 import {CollectionEvent} from '../src/event/CollectionEvent';
 import {EntityEvent} from '../src/event/EntityEvent';
+import {TransactionEvent} from '../src/event/TransactionEvent';
 import {FieldTypeRegistry} from '../src/meta/FieldTypeRegistry';
 
 import {BooleanFieldType} from '../src/meta/type/BooleanFieldType';
@@ -109,7 +111,7 @@ describe('Collection', function()
 		}, this);
 
 		instance.addEntity(entity);
-		assert.equal(actualCall.join(', '), 'Simple:beforeAdd, Simple:added', 'Collection don\'t dispatch events');
+		assert.equal(actualCall.join(', '), 'beforeAdd,Simple:beforeAdd, added,Simple:added', 'Collection don\'t dispatch events');
 	});
 
 	it('remove events', function()
@@ -123,7 +125,7 @@ describe('Collection', function()
 		}, this);
 
 		instance.removeEntity(entity);
-		assert.equal(actualCall.join(', '), 'Simple:beforeRemove, Simple:removed', 'Collection don\'t dispatch events');
+		assert.equal(actualCall.join(', '), 'beforeRemove,Simple:beforeRemove, removed,Simple:removed', 'Collection don\'t dispatch events');
 	});
 
 	it('clear events', function()
@@ -137,7 +139,7 @@ describe('Collection', function()
 		}, this);
 
 		instance.removeAllEntities();
-		assert.equal(actualCall.join(', '), 'Simple:beforeClear, Simple:cleared', 'Collection don\'t dispatch events');
+		assert.equal(actualCall.join(', '), 'beforeRemove,Simple:beforeRemove, removed,Simple:removed', 'Collection don\'t dispatch events');
 	});
 
 	it('relay events from entities', function()
@@ -199,7 +201,7 @@ describe('Collection', function()
 
 		instance.addListener(function(e: CollectionEvent) {
 			e.preventDefault();
-		}, this, entity.entityMeta.name + ':beforeClear');
+		}, this, entity.entityMeta.name + ':beforeRemove');
 
 		assert.equal(instance.removeAllEntities(), false, 'Cancelling of add failed');
 		assert.equal(instance.length, 1, 'Collection could not be empty');
@@ -245,5 +247,156 @@ describe('Collection', function()
 
 		assert.equal(instance.removeAllEntities(false), true, 'Removes of all entities failed');
 		assert.equal(callCount, 0, 'Collection should not dispatch events');
-	});	
+	});
+
+	it('transaction success', function()
+	{
+		var instance: Collection = new SimpleCollection([
+				new SimpleEntity(),
+				new SimpleEntity(),
+				new SimpleEntity()
+			]),
+			begin: boolean = false,
+			commit: boolean = false,
+			beforeAdd: boolean = false,
+			added: boolean = false,
+			beforeRemove: boolean = false,
+			removed: boolean = false;
+
+		instance.addListener(function(event: TransactionEvent): void {
+			begin = true;
+		}, this, TransactionEvent.BEGIN);
+
+		instance.addListener(function(event: TransactionEvent): void {
+			commit = true;
+		}, this, TransactionEvent.COMMIT);
+
+		instance.addListener(function(event: CollectionEvent): void {
+			beforeAdd = true;
+		}, this, CollectionEvent.BEFORE_ADD);
+
+		instance.addListener(function(event: CollectionEvent): void {
+			added = true;
+		}, this, CollectionEvent.ADDED);
+
+		instance.addListener(function(event: CollectionEvent): void {
+			beforeRemove = true;
+		}, this, CollectionEvent.BEFORE_REMOVE);
+
+		instance.addListener(function(event: CollectionEvent): void {
+			removed = true;
+		}, this, CollectionEvent.REMOVED);
+
+		instance.beginTransaction();
+
+		assert.equal(begin, true, 'After begin transaction must fire event "transactionBegin"');
+		assert.equal(commit, false, 'Can\'t fire event "transactionCommit" before transaction commited');
+		assert.equal(instance.hasTransaction(), true, 'Method "hasTransaction" must returns "true"');
+
+		instance.removeEntity(instance.getAt(0));
+		instance.addEntity(new SimpleEntity());
+
+		assert.equal(beforeAdd, true, 'Event "beforeAdd" must be dispatched');
+		assert.equal(added, false, 'Event "added" can\'t be dispatched');
+		assert.equal(beforeRemove, true, 'Event "beforeRemove" must be dispatched');
+		assert.equal(removed, false, 'Event "removed" can\'t be dispatched');
+
+		instance.getTransaction().commit();
+
+		assert.equal(added, true, 'Event "added" must be dispatched');
+		assert.equal(removed, true, 'Event "removed" must be dispatched');
+		assert.equal(commit, true, 'After commit transaction must fire event "transactionCommit"');
+		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction commited');
+	});
+
+	it('transaction failed', function()
+	{
+		var i: number,
+			instance: Collection = new SimpleCollection([
+				new SimpleEntity(),
+				new SimpleEntity(),
+				new SimpleEntity()
+			]),
+			rollback: boolean = false,
+			added: boolean = false,
+			removed: boolean = false,
+			uuids: string[] = [];
+
+		for (i = 0; i < instance.length; i++) {
+			uuids.push(instance.getAt(i).uuid);
+		}
+
+		instance.addListener(function(event: TransactionEvent): void {
+			rollback = true;
+		}, this, TransactionEvent.ROLLBACK);
+
+		instance.addListener(function(event: CollectionEvent): void {
+			added = true;
+		}, this, CollectionEvent.ADDED);
+
+		instance.addListener(function(event: CollectionEvent): void {
+			removed = true;
+		}, this, CollectionEvent.REMOVED);
+
+		instance.beginTransaction();
+
+		assert.equal(instance.hasTransaction(), true, 'Method "hasTransaction" must returns "true"');
+
+		instance.removeEntity(instance.getAt(0));
+		instance.addEntity(new SimpleEntity());
+
+		assert.equal(added, false, 'Event "added" can\'t be dispatched');
+		assert.equal(removed, false, 'Event "removed" can\'t be dispatched');
+
+		instance.getTransaction().rollback();
+
+		assert.equal(added, false, 'Event "added" can\'t be dispatched after rollback');
+		assert.equal(removed, false, 'Event "removed" can\'t be dispatched after rollback');
+		assert.equal(rollback, true, 'After commit transaction must fire event "transactionRollback"');
+		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction rolled back');
+
+		for (i = 0; i < instance.length; i++) {
+			assert.equal(instance.getAt(i).uuid, uuids[i], 'UUID is wrong');
+		}
+	});
+
+	it('rollback transaction if can\'t add/remove entity', function()
+	{
+		var instance: Collection = new SimpleCollection([
+				new SimpleEntity(),
+				new SimpleEntity(),
+				new SimpleEntity()
+			]),
+			transaction: Transaction;
+
+		transaction = instance.beginTransaction();
+
+		instance.addListener(function(event: CollectionEvent): void {
+			event.preventDefault();
+		}, this, CollectionEvent.BEFORE_ADD);
+
+		instance.addEntity(new SimpleEntity());
+
+		assert.equal(instance.length, 3, 'Property "length" has a wrong value');
+		assert.equal(transaction.isFinished(), true, 'Method "isFinished" must returns "true" after transaction rolled back');
+		assert.equal(transaction.isSuccess(), false, 'Method "isSuccess" must returns "false" after transaction rolled back');
+		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction rolled back');
+	});
+
+	it('deep transaction', function ()
+	{
+		var instance: Collection = new SimpleCollection([
+				new SimpleEntity(),
+				new SimpleEntity(),
+				new SimpleEntity()
+			]),
+			entity: Entity = new SimpleEntity(),
+			transaction: Transaction;
+
+		instance.beginTransaction(true);
+
+		assert.equal(instance.getAt(0).hasTransaction(), true, 'Transaction must be started');
+		instance.addEntity(entity);
+		assert.equal(entity.hasTransaction(), true, 'Transaction must be started for the added entity');
+	});
 });

@@ -1,13 +1,13 @@
 import {Registry} from '../src/Registry';
 import {EntityMeta} from '../src/meta/EntityMeta';
-import {Entity, EntityState} from '../src/Entity';
+import {Entity, EntityState, RelationMap} from '../src/Entity';
 import {SimpleEntityMeta} from './meta/SimpleEntityMeta';
 
 export class SimpleEntity extends Entity
 {
-	public constructor(data: EntityState = null, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
+	public constructor(state: EntityState = null, relMap: RelationMap = null, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
 	{
-		super(data, isNew, readOnly, uuid);
+		super(state, relMap, isNew, readOnly, uuid);
 	}
 
 	protected initEntityMeta(): EntityMeta

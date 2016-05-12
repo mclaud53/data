@@ -1,7 +1,9 @@
 import {EventDispatcher, Event} from 'frog-event-dispatcher';
 import {Registry} from './Registry';
 import {Entity} from './Entity';
+import {Transaction} from './Transaction';
 import {CollectionEvent} from './event/CollectionEvent';
+import {TransactionEvent} from './event/TransactionEvent';
 import {CollectionMeta} from './meta/CollectionMeta';
 
 export abstract class Collection extends EventDispatcher<Event<any>, any>
@@ -13,6 +15,12 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 	private _initialEntities: Entity[];
 
 	private _currentEntities: Entity[];
+
+	private _transaction: Transaction = null;
+
+	private _transactionDeep: boolean = false;
+
+	private _transactionEntities: Entity[];
 
 	private _readOnly: boolean = false;
 
@@ -40,16 +48,22 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		}
 		this._uuid = uuid;
 		if (this._relayEntityEvents && this.length) {
-			this.relayAll(this._entities);
+			this.relayAll(this._currentEntities);
+			this.unrelayAll(this._currentEntities, [TransactionEvent.BEGIN, TransactionEvent.COMMIT, TransactionEvent.ROLLBACK]);
 		} 
 	}
 
 	protected abstract initCollectionMeta(): CollectionMeta;
 
+	public get uuid(): string
+	{
+		return this._uuid;
+	}
+
 	public get added(): Entity[]
 	{
 		var i: number,
-			entities: Entity[] = this._entities,
+			entities: Entity[] = this._currentEntities,
 			ret: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
@@ -64,7 +78,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 	public get removed(): Entity[]
 	{
 		var i: number,
-			entities: Entity[] = this._entities,
+			entities: Entity[] = this._currentEntities,
 			ret: Entity[] = [];
 
 		for (i = 0; i < this._initialEntities.length; i++) {
@@ -78,7 +92,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 
 	public get length(): number
 	{
-		return this._entities.length;
+		return this._currentEntities.length;
 	}
 
 	public get readOnly(): boolean
@@ -86,20 +100,20 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		return this._readOnly;
 	}
 
-	public addEntity(entity: Entity, options: boolean | Object = {}): boolean
+	public addEntity(entity: Entity, options: boolean | Object = {}, force: boolean = false): boolean
 	{
 		if (this.hasEntity(entity)) {
 			return true;
 		}
 
-		return this.addEntities([entity], options);
+		return this.addEntities([entity], options, force);
 	}
 
-	public addEntities(entities: Entity[], options: boolean | Object = {}): boolean
+	public addEntities(entities: Entity[], options: boolean | Object = {}, force: boolean = false): boolean
 	{
 		var i: number,
 			event: CollectionEvent,
-			eventType: string,
+			eventType: string[],
 			addedEntities: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
@@ -117,11 +131,17 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		}
 
 		if (false !== options) {
-			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_ADD;
+			eventType = [
+				CollectionEvent.BEFORE_ADD,
+				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_ADD
+			];
 			if (this.willDispatch(eventType)) {
-				event = new CollectionEvent(eventType, this, addedEntities, [], true, options);
+				event = new CollectionEvent(eventType, this, addedEntities, [], !force, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
+					if (this.hasTransaction()) {
+						this.getTransaction().rollback();
+					}
 					return false;
 				}
 			}
@@ -129,14 +149,24 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 
 		if (this._relayEntityEvents) {
 			this.relayAll(addedEntities);
+			this.unrelayAll(addedEntities, [TransactionEvent.BEGIN, TransactionEvent.COMMIT, TransactionEvent.ROLLBACK]);
+		}
+
+		if (this.hasTransaction() && this._transactionDeep) {
+			for (i = 0; i < addedEntities.length; i++) {
+				addedEntities[i].beginTransaction(this._transaction, options);
+			}
 		}
 
 		for (i = 0; i < addedEntities.length; i++) {
-			this._entities.push(addedEntities[i]);
+			this._currentEntities.push(addedEntities[i]);
 		}
 
-		if (false !== options) {
-			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.ADDED;
+		if (false !== options && !this.hasTransaction()) {
+			eventType = [
+				CollectionEvent.ADDED,
+				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.ADDED
+			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, addedEntities, [], false, options);
 				this.dispatch(event);
@@ -151,26 +181,31 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		return this.indexOf(entity) > -1;
 	}
 
-	public indexOf(entity: Entity): number
+	public getAt(index: number): Entity
 	{
-		return this._entities.indexOf(entity);
+		return this._currentEntities[index];
 	}
 
-	public removeEntity(entity: Entity, options: boolean | Object = {}): boolean
+	public indexOf(entity: Entity): number
+	{
+		return this._currentEntities.indexOf(entity);
+	}
+
+	public removeEntity(entity: Entity, options: boolean | Object = {}, force: boolean = false): boolean
 	{
 		if (!this.hasEntity(entity)) {
 			return true;
 		}
 
-		return this.removeEntities([entity], options);
+		return this.removeEntities([entity], options, force);
 	}
 
-	public removeEntities(entities: Entity[], options: boolean | Object = {}): boolean
+	public removeEntities(entities: Entity[], options: boolean | Object = {}, force: boolean = false): boolean
 	{
 		var i: number,
 			index: number,
 			event: CollectionEvent,
-			eventType: string,
+			eventType: string[],
 			removedEntities: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
@@ -188,11 +223,17 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		}
 
 		if (false !== options) {
-			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_REMOVE;
+			eventType = [
+				CollectionEvent.BEFORE_REMOVE,
+				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_REMOVE
+			];
 			if (this.willDispatch(eventType)) {
-				event = new CollectionEvent(eventType, this, [], removedEntities, true, options);
+				event = new CollectionEvent(eventType, this, [], removedEntities, !force, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
+					if (this.hasTransaction()) {
+						this.getTransaction().rollback();
+					}
 					return false;
 				}
 			}
@@ -205,12 +246,15 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		for (i = 0; i < removedEntities.length; i++) {
 			index = this.indexOf(removedEntities[i]);
 			if (index > -1) {
-				this._entities.splice(index, 1);
+				this._currentEntities.splice(index, 1);
 			}
 		}
 
-		if (false !== options) {
-			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED;
+		if (false !== options && !this.hasTransaction()) {
+			eventType = [
+				CollectionEvent.REMOVED,
+				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED
+			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, [], removedEntities, false, options);
 				this.dispatch(event);
@@ -220,16 +264,16 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		return true;
 	}
 
-	public removeAllEntities(options: boolean | Object = {}): boolean
+	public removeAllEntities(options: boolean | Object = {}, force: boolean = false): boolean
 	{
-		return this.clear(options);
+		return this.clear(options, force);
 	}
 
-	public clear(options: boolean | Object = {}): boolean
+	public clear(options: boolean | Object = {}, force: boolean = false): boolean
 	{
 		var i: number,
 			event: CollectionEvent,
-			eventType: string,
+			eventType: string[],
 			removedEntities: Entity[] = [];
 
 		if (0 === this.length) {
@@ -240,16 +284,22 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 			return false;
 		}
 
-		for (i = 0; i < this._entities.length; i++) {
-			removedEntities.push(this._entities[i]);
+		for (i = 0; i < this._currentEntities.length; i++) {
+			removedEntities.push(this._currentEntities[i]);
 		}
 
 		if (false !== options) {
-			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_CLEAR;
+			eventType = [
+				CollectionEvent.BEFORE_REMOVE,
+				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_REMOVE
+			];
 			if (this.willDispatch(eventType)) {
-				event = new CollectionEvent(eventType, this, [], removedEntities, true, options);
+				event = new CollectionEvent(eventType, this, [], removedEntities, !force, options);
 				this.dispatch(event);
 				if (event.isDefaultPrevented) {
+					if (this.hasTransaction()) {
+						this.getTransaction().rollback();
+					}
 					return false;
 				}
 			}
@@ -258,10 +308,13 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		if (this._relayEntityEvents) {
 			this.unrelayAll(removedEntities);
 		}
-		this._entities.length = 0;
+		this._currentEntities.length = 0;
 
-		if (false !== options) {
-			eventType = this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.CLEARED;
+		if (false !== options && !this.hasTransaction()) {
+			eventType = [
+				CollectionEvent.REMOVED,
+				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED
+			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, [], removedEntities, false, options);
 				this.dispatch(event);
@@ -291,8 +344,146 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		}
 	}
 
-	protected get _entities(): Entity[]
+	public hasTransaction(): boolean
 	{
-		return this._currentEntities;
+		return null !== this._transaction;
 	}
+
+	public getTransaction(): Transaction
+	{
+		return this._transaction;
+	}
+
+	public beginTransaction(deep: boolean = false, transaction: Transaction = null, options: Object = {}): Transaction
+	{
+		var i: number,
+			e: TransactionEvent;
+
+		if (this.hasTransaction() && (this._transaction !== transaction)) {
+			throw new Error('Transaction already strated!');
+		}
+
+		if (null === transaction) {
+			transaction = new Transaction();
+		} else if (transaction.isFinished()) {
+			throw new Error('Transaction already finished');
+		}
+
+		transaction.addListeners([
+			{
+				listener: this.onTransactionCommit,
+				scope: this,
+				eventType: TransactionEvent.COMMIT
+			},
+			{
+				listener: this.onTransactionRollback,
+				scope: this,
+				eventType: TransactionEvent.ROLLBACK
+			}
+		]);
+
+		this._transactionDeep = deep;
+		this._transaction = transaction;
+		this._transactionEntities = this._currentEntities.slice();
+		this.relay(transaction, null, 1);
+
+		if (deep) {
+			for (i = 0; i < this._currentEntities.length; i++) {
+				this._currentEntities[i].beginTransaction(transaction, options);
+			}
+		}
+
+		if (this.willDispatch(TransactionEvent.BEGIN)) {
+			e = new TransactionEvent(TransactionEvent.BEGIN, transaction, false, options);
+			this.dispatch(e);
+		}
+
+		return transaction;
+	}
+
+	private onTransactionCommit(event: TransactionEvent, extra: Object): void
+	{
+		var i: number,
+			index: number,
+			e: CollectionEvent,
+			eventType: string[],
+			entity: Entity,
+			addedEntities: Entity[] = [],
+			removedEntities: Entity[] = [];
+
+		this.unrelay(this._transaction);
+		this._transaction.removeListeners([
+			{
+				listener: this.onTransactionCommit,
+				scope: this,
+				eventType: TransactionEvent.COMMIT
+			},
+			{
+				listener: this.onTransactionRollback,
+				scope: this,
+				eventType: TransactionEvent.ROLLBACK
+			}
+		]);
+		this._transaction = null;
+
+		for (i = 0; i < this._transactionEntities.length; i++) {
+			entity = this._transactionEntities[i];
+			if (this._currentEntities.indexOf(entity) === -1) {
+				removedEntities.push(entity);
+			}
+		}
+
+		for (i = 0; i < this._currentEntities.length; i++) {
+			entity = this._currentEntities[i];
+			if (this._transactionEntities.indexOf(entity) === -1) {
+				addedEntities.push(entity);
+			}
+		}
+
+		if (addedEntities.length > 0 || removedEntities.length > 0) {
+			eventType = [];
+			if (addedEntities.length > 0) {
+				eventType.push(CollectionEvent.ADDED);
+				eventType.push(this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.ADDED);
+			}
+			if (removedEntities.length > 0) {
+				eventType.push(CollectionEvent.REMOVED);
+				eventType.push(this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED);
+			}
+			if (this.willDispatch(eventType)) {
+				e = new CollectionEvent(eventType, this, addedEntities, removedEntities, false, event.options);
+				this.dispatch(e);
+			}
+		}
+	}
+
+	private onTransactionRollback(e: TransactionEvent, extra: Object): void
+	{
+		var i: number,
+			fieldName: string;
+
+		this.unrelay(this._transaction);
+		this._transaction.removeListeners([
+			{
+				listener: this.onTransactionCommit,
+				scope: this,
+				eventType: TransactionEvent.COMMIT
+			},
+			{
+				listener: this.onTransactionRollback,
+				scope: this,
+				eventType: TransactionEvent.ROLLBACK
+			}
+		]);
+		this._transaction = null;
+
+		if (this._relayEntityEvents) {
+			this.unrelayAll(this._currentEntities);
+		}
+		this._currentEntities = this._transactionEntities.slice();
+		if (this._relayEntityEvents) {
+			this.relayAll(this._currentEntities);
+			this.unrelayAll(this._currentEntities, [TransactionEvent.BEGIN, TransactionEvent.COMMIT, TransactionEvent.ROLLBACK]);
+		}
+	}	
 }

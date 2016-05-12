@@ -7,9 +7,15 @@ import {EntityMeta} from './meta/EntityMeta';
 import {Registry} from './Registry';
 import {EntityEvent} from './event/EntityEvent';
 import {RelationEvent} from './event/RelationEvent';
+import {TransactionEvent} from './event/TransactionEvent';
 import {Collection} from './Collection';
+import {Transaction} from './Transaction';
 
 export type EntityState = { [key: string]: any; };
+
+export type RelationMap = {
+	[key: string]: (Entity | Collection)
+};
 
 export abstract class Entity extends EventDispatcher<Event<any>, any>
 {
@@ -19,19 +25,28 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 	private _readOnly: boolean;
 
-	private _related: { [key: string]: (Entity | Collection) } = {};
-
 	private _initialState: EntityState = {};
+
+	private _initialRelMap: RelationMap = {};
 
 	private _currentState: EntityState = {};
 
-	public constructor(data: EntityState = null, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
+	private _currentRelMap: RelationMap = {};
+
+	private _transaction: Transaction = null;
+
+	private _transactionState: EntityState = {};
+
+	private _transactionRelMap: RelationMap = {};
+
+	public constructor(state: EntityState = null, relMap: RelationMap = null, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
 	{
 		super();
 
 		this._entityMeta = this.initEntityMeta();
 
-		this._initData(data);
+		this._initState(state);
+		this._initRelMap(relMap);
 
 		if (null === uuid) {
 			uuid = Registry
@@ -47,27 +62,32 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 	protected abstract initEntityMeta(): EntityMeta;
 
-	private _initData(data: EntityState = null): void
+	private _initState(state: EntityState = null): void
 	{
 		var i: number,
 			name: string,
-			// field: Field,
 			value: any;
 
-		if (null === data) {
-			data = {};
+		if (null === state) {
+			state = {};
 		}
 
 		for (i = 0; i < this.entityMeta.fields.length; i++) {
 			name = this.entityMeta.fields[i].name;
-			if (data.hasOwnProperty(name)) {
-				value = data[name]
+			if (state.hasOwnProperty(name)) {
+				value = state[name]
 			} else {
 				value = this.entityMeta.fields[i].defaultValue;
 			}
 
 			this._initialState[name] = value;
+			this._currentState[name] = value;
 		}
+	}
+
+	private _initRelMap(relMap: RelationMap = null): void
+	{
+		// @todo
 	}
 
 	public get entityMeta(): EntityMeta
@@ -106,17 +126,64 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return this._readOnly;
 	}
 
+	public hasTransaction(): boolean
+	{
+		return null !== this._transaction;
+	}
+
+	public getTransaction(): Transaction
+	{
+		return this._transaction;
+	}
+
+	public beginTransaction(transaction: Transaction = null, options: Object = {}): Transaction
+	{
+		var i: number,
+			e: TransactionEvent;
+
+		if (this.hasTransaction() && (this._transaction !== transaction)) {
+			throw new Error('Transaction already strated!');
+		}
+
+		if (null === transaction) {
+			transaction = new Transaction();
+		} else if (transaction.isFinished()) {
+			throw new Error('Transaction already finished');
+		}
+
+		transaction.addListeners([
+				{
+					listener: this.onTransactionCommit,
+					scope: this,
+					eventType: TransactionEvent.COMMIT
+				},
+				{
+					listener: this.onTransactionRollback,
+					scope: this,
+					eventType: TransactionEvent.ROLLBACK
+				}
+			]);
+
+		this._transaction = transaction;
+		this._fillState(this._transactionState);
+		this._fillRelMap(this._transactionRelMap);
+		this.relay(transaction, null, 1);
+
+		if (this.willDispatch(TransactionEvent.BEGIN)) {
+			e = new TransactionEvent(TransactionEvent.BEGIN, transaction, false, options);
+			this.dispatch(e);
+		}
+
+		return transaction;
+	}
+
 	public get(field: string, initial: boolean = false): any
 	{
 		if (this.entityMeta.fieldNames.indexOf(field) === -1) {
 			throw new Error('Field don\'t exist ' + field);
 		}
 
-		if (!initial && this._currentState.hasOwnProperty(field)) {
-			return this._currentState[field];
-		}
-
-		return this._initialState[field];
+		return initial ? this._initialState[field] : this._currentState[field];
 	}
 
 	public set(field: string, value: any, options: boolean | Object = {}): boolean
@@ -141,7 +208,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return ret;
 	}
 
-	public setState(state: EntityState, options: boolean | Object = {}): boolean
+	public setState(state: EntityState, options: boolean | Object = {}, force: boolean = false): boolean
 	{
 		var i: number,
 			field: string,
@@ -189,9 +256,12 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			];
 
 			if (this.willDispatch(events)) {
-				e = new EntityEvent(events, this, fields, newState, oldState, true, options);
+				e = new EntityEvent(events, this, fields, newState, oldState, !force, options);
 				this.dispatch(e);
 				if (e.isDefaultPrevented) {
+					if (this.hasTransaction()) {
+						this.getTransaction().rollback(options);
+					}
 					return false;
 				}
 			}
@@ -199,24 +269,21 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 		for (i = 0; i < fields.length; i++) {
 			field = fields[i];
-			if (this._initialState[field] === newState[field]) {
-				if (this._currentState.hasOwnProperty(field)) {
-					delete this._currentState[field];
-				}
-			} else {
-				this._currentState[field] = newState[field];
-			}
+			this._currentState[field] = newState[field];
 		}
 
-		if (false !== options) {
-			events = {
-				[this.entityMeta.name]: [
-					EntityEvent.CHANGED,
-					{
-						[EntityEvent.CHANGED]: fields
-					}
-				]
-			};
+		if (false !== options && !this.hasTransaction()) {
+			events = [
+				EntityEvent.CHANGED,
+				{
+					[this.entityMeta.name]: [
+						EntityEvent.CHANGED,
+						{
+							[EntityEvent.CHANGED]: fields
+						}
+					]
+				}
+			];
 
 			if (this.willDispatch(events)) {
 				e = new EntityEvent(events, this, fields, newState, oldState, false, options);
@@ -227,9 +294,9 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return true;
 	}
 
-	public getRelated(name: string): (Entity | Collection)
+	public getRelated(name: string, initial: boolean = false): (Entity | Collection)
 	{
-		return this.hasRelated(name) ? this._related[name] : null;
+		return initial ? this._initialState[name] : this._currentRelMap[name];
 	}
 
 	public hasRelated(name: string): boolean
@@ -237,7 +304,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		if (!this.entityMeta.hasRelation(name)) {
 			throw new Error('Relation with name: ' + name + ' isn\'t exist in entity ' + this.entityMeta.name);
 		}
-		return !!this._related[name];
+		return !!this._currentRelMap[name];
 	}
 
 	public setRelated(name: string, value: (Entity | Collection), options: boolean | Object = {}, updateRelated: boolean = true): boolean
@@ -252,7 +319,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		// 	throw new Error('Relation must has name: ' + relation.entityName + ' passed model with name: ' + value.name);
 		// }
 
-		if (this._related[name] === value) {
+		if (this._currentRelMap[name] === value) {
 			return true;
 		}
 
@@ -326,9 +393,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
 			field = this.entityMeta.fieldNames[i];
 
-			if (this._initialState.hasOwnProperty(field)) {
-				this._initialState[field] = this.entityMeta.fieldMap[field].defaultValue;
-			}
+			this._initialState[field] = this.entityMeta.fieldMap[field].defaultValue;
 		}
 
 		this.revert();
@@ -344,9 +409,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
 			field = this.entityMeta.fieldNames[i];
 
-			if (this._currentState.hasOwnProperty(field)) {
-				delete this._currentState[field];
-			}
+			this._currentState[field] = this._initialState[field];
 		}
 
 		return true;
@@ -360,14 +423,97 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
 			field = this.entityMeta.fieldNames[i];
 
-			if (!this._currentState.hasOwnProperty(field)) {
-				continue;
-			}
-
 			this._initialState[field] = this._currentState[field];
 		}
 
 		this.revert();
+	}
+
+	private onTransactionCommit(event: TransactionEvent, extra: Object): void
+	{
+		var i: number,
+			field: string,
+			fields: string[] = [],
+			e: EntityEvent,
+			events: any,
+			oldState: EntityState = this._transactionState,
+			newState: EntityState = this._currentState;
+
+		this.unrelay(this._transaction);
+		this._transaction.removeListeners([
+			{
+				listener: this.onTransactionCommit,
+				scope: this,
+				eventType: TransactionEvent.COMMIT
+			},
+			{
+				listener: this.onTransactionRollback,
+				scope: this,
+				eventType: TransactionEvent.ROLLBACK
+			}
+		]);
+		this._transaction = null;
+
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
+			if (!newState.hasOwnProperty(field)) {
+				continue;
+			}
+
+			if (oldState[field] === newState[field]) {
+				continue;
+			}
+
+			fields.push(field);
+		}
+
+		if (fields.length > 0) {
+			events = [
+				EntityEvent.CHANGED,
+				{
+					[this.entityMeta.name]: [
+						EntityEvent.CHANGED,
+						{
+							[EntityEvent.CHANGED]: fields
+						}
+					]
+				}
+			];
+
+			if (this.willDispatch(events)) {
+				e = new EntityEvent(events, this, fields, newState, oldState, false, event.options);
+				this.dispatch(e);
+			}
+		}
+	}
+
+	private onTransactionRollback(e: TransactionEvent, extra: Object): void
+	{
+		var i: number,
+			fieldName: string;
+
+		this.unrelay(this._transaction);
+		this._transaction.removeListeners([
+			{
+				listener: this.onTransactionCommit,
+				scope: this,
+				eventType: TransactionEvent.COMMIT
+			},
+			{
+				listener: this.onTransactionRollback,
+				scope: this,
+				eventType: TransactionEvent.ROLLBACK
+			}
+		]);
+		this._transaction = null;
+
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			fieldName = this.entityMeta.fieldNames[i];
+			if (!this._transactionState.hasOwnProperty(fieldName)) {
+				continue;
+			}
+			this._currentState[fieldName] = this._transactionState[fieldName];
+		}
 	}
 
 	private onRelatedEntityChanged(e: EntityEvent, extra: Object): void
@@ -535,7 +681,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		// }
 
 		// if (ret) {
-		// 	this._related[name] = newRelated;
+		// 	this._currentRelMap[name] = newRelated;
 
 		// 	events = {
 		// 		[relation.entityName]: {
@@ -648,7 +794,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		// }
 
 		// if (ret) {
-		// 	this._related[name] = newRelated;
+		// 	this._currentRelMap[name] = newRelated;
 
 		// 	if (relation.relayEvents && newRelated) {
 		// 		this.relay(newRelated);
@@ -670,13 +816,26 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 	private _fillState(state: EntityState, initial: boolean = false): EntityState
 	{
 		var i: number,
-			field: string;
+			fieldName: string;
 
 		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
-			field = this.entityMeta.fieldNames[i];
-			state[field] = this.get(field, initial);
+			fieldName = this.entityMeta.fieldNames[i];
+			state[fieldName] = this.get(fieldName, initial);
 		}
 
 		return state;
+	}
+
+	private _fillRelMap(relMap: RelationMap, initial: boolean = false): RelationMap
+	{
+		var i: number,
+			relationName: string;
+
+		for (i = 0; i < this.entityMeta.relationNames.length; i++) {
+			relationName = this.entityMeta.relationNames[i];
+			relMap[relationName] = this.getRelated(relationName, initial);
+		}
+
+		return relMap;
 	}
 }

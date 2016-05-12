@@ -6,6 +6,6 @@ export class UUIDGeneratorImpl implements UUIDGenerator
 
 	public uuid(name: string): string
 	{
-		return '_' + name + (++UUIDGeneratorImpl._sequence);
+		return name + '-' + (++UUIDGeneratorImpl._sequence);
 	}
 }

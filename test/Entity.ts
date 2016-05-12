@@ -8,8 +8,10 @@ import {Field} from '../src/meta/Field';
 import {Relation} from '../src/meta/Relation';
 import {RelationType} from '../src/meta/RelationType';
 import {Entity} from '../src/Entity';
+import {Transaction} from '../src/Transaction';
 import {CollectionEvent} from '../src/event/CollectionEvent';
 import {EntityEvent} from '../src/event/EntityEvent';
+import {TransactionEvent} from '../src/event/TransactionEvent';
 import {FieldTypeRegistry} from '../src/meta/FieldTypeRegistry';
 
 import {BooleanFieldType} from '../src/meta/type/BooleanFieldType';
@@ -43,6 +45,8 @@ describe('Entity', function()
 
 		assert.equal(instance.id, 0, 'The property "id" has a wrong value');
 		assert.equal(instance.readOnly, false, 'The property "readOnly" has a wrong value');
+		assert.equal(instance.hasTransaction(), false, 'The new entity can\'t has transaction');
+		assert.equal(instance.getTransaction(), null, 'The new entity can\'t returns transaction');
 	});
 
 	it('get/set', function()
@@ -135,6 +139,122 @@ describe('Entity', function()
 
 		assert.equal(instance.get('title'), 'title', 'The field "title" has a wrong value');
 		assert.equal(instance.get('title', true), 'title', 'The field "title" has a wrong initial value');
+	});
+
+	it('transaction success', function ()
+	{
+		var instance: Entity = new SimpleEntity({
+			id: 3,
+			title: 'Initial title'
+		}),
+			begin: boolean = false,
+			commit: boolean = false,
+			beforeChange: boolean = false,
+			changed: boolean = false;
+
+		instance.addListener(function(event: TransactionEvent): void {
+			begin = true;
+		}, this, TransactionEvent.BEGIN);
+
+		instance.addListener(function(event: TransactionEvent): void {
+			commit = true;
+		}, this, TransactionEvent.COMMIT);
+
+		instance.set('title', 'Current title');
+		assert.equal(begin, false, 'Can\'t fire event "transactionBegin" before transaction begined');
+
+		instance.beginTransaction();
+
+		assert.equal(begin, true, 'After begin transaction must fire event "transactionBegin"');
+		assert.equal(commit, false, 'Can\'t fire event "transactionCommit" before transaction commited');
+		assert.equal(instance.hasTransaction(), true, 'Method "hasTransaction" must returns "true"');
+
+		instance.addListener(function(event: EntityEvent): void {
+			beforeChange = true;
+		}, this, EntityEvent.BEFORE_CHANGE);
+
+		instance.addListener(function(event: EntityEvent): void {
+			changed = true;
+		}, this, EntityEvent.CHANGED);
+
+		instance.set('title', 'New title');
+
+		assert.equal(beforeChange, true, 'Event "beforeChange" must be failed in transaction');
+		assert.equal(changed, false, 'Event "changed" can\' be failed in transaction');
+		assert.equal(instance.get('title'), 'New title', 'Field "title" has a wrong value in transaction');
+
+		instance.getTransaction().commit();
+
+		assert.equal(commit, true, 'After commit transaction must fire event "transactionCommit"');
+		assert.equal(changed, true, 'Event "changed" must be failed after commit transaction');
+		assert.equal(instance.get('title'), 'New title', 'Field "title" has a wrong value after commit transaction');
+		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction commited');
+	});
+
+	it('transaction failed', function() {
+		var instance: Entity = new SimpleEntity({
+				id: 3,
+				title: 'Initial title'
+			}),
+			rollback: boolean = false,
+			beforeChange: boolean = false,
+			changed: boolean = false;
+
+		instance.addListener(function(event: TransactionEvent): void {
+			rollback = true;
+		}, this, TransactionEvent.ROLLBACK);
+
+		instance.set('title', 'Current title');
+
+		instance.beginTransaction();
+
+		assert.equal(rollback, false, 'Can\'t fire event "transactionRollback" before transaction rolled back');
+		assert.equal(instance.hasTransaction(), true, 'Method "hasTransaction" must returns "true"');
+
+		instance.addListener(function(event: EntityEvent): void {
+			beforeChange = true;
+		}, this, EntityEvent.BEFORE_CHANGE);
+
+		instance.addListener(function(event: EntityEvent): void {
+			changed = true;
+		}, this, EntityEvent.CHANGED);
+
+		instance.set('title', 'New title');
+
+		assert.equal(beforeChange, true, 'Event "beforeChange" must be failed in transaction');
+		assert.equal(changed, false, 'Event "changed" can\' be failed in transaction');
+		assert.equal(instance.get('title'), 'New title', 'Field "title" has a wrong value in transaction');
+
+		instance.getTransaction().rollback();
+
+		assert.equal(rollback, true, 'After rollback transaction must fire event "transactionRollback"');
+		assert.equal(changed, false, 'Event "changed" can\'t be failed after commit transaction');
+		assert.equal(instance.get('title'), 'Current title', 'Field "title" has a wrong value after transaction rolled back');
+		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction rolled back');
+	});
+
+	it('rollback transaction if can\'t set field value', function()
+	{
+		var instance: Entity = new SimpleEntity({
+				id: 3,
+				title: 'Initial title'
+			}),
+			transaction: Transaction;
+
+		instance.set('title', 'Current title');
+
+		transaction = instance.beginTransaction();
+
+		instance.addListener(function(event: EntityEvent): void {
+			event.preventDefault();
+		}, this, EntityEvent.BEFORE_CHANGE);
+
+		instance.set('title', 'New title');
+
+		assert.equal(instance.get('title'), 'Current title', 'Field "title" has a wrong value');
+		assert.equal(transaction.isFinished(), true, 'Method "isFinished" must returns "true" after transaction rolled back');
+		assert.equal(transaction.isSuccess(), false, 'Method "isSuccess" must returns "false" after transaction rolled back');
+		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction rolled back');
 	});
 
 	// it('setRelated (belongsTo)', function () {
