@@ -154,7 +154,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 
 		if (this.hasTransaction() && this._transactionDeep) {
 			for (i = 0; i < addedEntities.length; i++) {
-				addedEntities[i].beginTransaction(this._transaction, options);
+				addedEntities[i].beginTransaction(true, this._transaction, options);
 			}
 		}
 
@@ -359,8 +359,12 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		var i: number,
 			e: TransactionEvent;
 
-		if (this.hasTransaction() && (this._transaction !== transaction)) {
-			throw new Error('Transaction already strated!');
+		if (this.hasTransaction()) {
+			if (this._transaction === transaction) {
+				return this._transaction;
+			} else {
+				throw new Error('Transaction already strated!');
+			}
 		}
 
 		if (null === transaction) {
@@ -382,14 +386,15 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 			}
 		]);
 
-		this._transactionDeep = deep;
 		this._transaction = transaction;
 		this._transactionEntities = this._currentEntities.slice();
 		this.relay(transaction, null, 1);
 
-		if (deep) {
+		if (deep !== this._transactionDeep && deep) {
+			this._transactionDeep = deep;
+
 			for (i = 0; i < this._currentEntities.length; i++) {
-				this._currentEntities[i].beginTransaction(transaction, options);
+				this._currentEntities[i].beginTransaction(true, transaction, options);
 			}
 		}
 
@@ -425,6 +430,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 			}
 		]);
 		this._transaction = null;
+		this._transactionDeep = false;
 
 		for (i = 0; i < this._transactionEntities.length; i++) {
 			entity = this._transactionEntities[i];
@@ -476,6 +482,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 			}
 		]);
 		this._transaction = null;
+		this._transactionDeep = false;
 
 		if (this._relayEntityEvents) {
 			this.unrelayAll(this._currentEntities);

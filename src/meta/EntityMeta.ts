@@ -129,13 +129,29 @@ export class EntityMeta
 		return this.hasRelation(name) ? this._relationMap[name] : null;
 	}
 
+	public findRelation(types: RelationType[], entityMeta: EntityMeta, foreignKey: ForeignKey): Relation
+	{
+		var i: number;
+
+		for (i = 0; i < this.relations.length; i++) {
+			if ((this.relations[i].entityMeta === entityMeta) &&
+				(types.indexOf(this.relations[i].type) > -1) &&
+				this.isEqualFKs(foreignKey, this.relations[i].foreignKey)) {
+				return this.relations[i];
+			}
+		}
+
+		return null;
+	}
+
 	public getBackwardRelation(rel: string | Relation): Relation
 	{
 		var i: number,
+			field: string,
+			fields: string[],
 			types: RelationType[],
 			foreignKey: ForeignKey,
-			relation: Relation,
-			relations: Relation[];
+			relation: Relation;
 
 		if (rel instanceof Relation) {
 			relation = rel;
@@ -147,18 +163,57 @@ export class EntityMeta
 			return null;
 		}
 
-		foreignKey = {};
-		
-
-		relations = relation.entityMeta.relations;
-
-		for (i = 0; i < relations.length; i++) {
-
+		if (relation.backwardRelation || null === relation.backwardRelation) {
+			return relation.backwardRelation;
 		}
+
+		switch (relation.type) {
+			case RelationType.BelongsTo:
+				types = [RelationType.HasMany, RelationType.HasOne];
+				break;
+
+			case RelationType.HasMany:
+			case RelationType.HasOne:
+				types = [RelationType.BelongsTo];
+				break;
+		}
+
+		foreignKey = {};
+		fields = Object.keys(relation.foreignKey);
+		for (i = 0; i < fields.length; i++) {
+			field = fields[i];
+			foreignKey[relation.foreignKey[field]] = field;
+		}
+
+		relation.backwardRelation = relation.entityMeta.findRelation(types, this, foreignKey);
+
+		return relation.backwardRelation;
 	}
 
 	public validate(): void
 	{
 		// @todo
+	}
+
+	protected isEqualFKs(a: ForeignKey, b: ForeignKey): boolean
+	{
+		var i: number,
+			aKeys: string[] = Object.keys(a),
+			bKeys: string[] = Object.keys(b);
+
+		if (aKeys.length !== bKeys.length) {
+			return false;
+		}
+
+		for (i = 0; i < aKeys.length; i++) {
+			if (bKeys.indexOf(aKeys[i]) === -1) {
+				return false;
+			}
+			if (a[aKeys[i]] !== b[aKeys[i]]) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 }

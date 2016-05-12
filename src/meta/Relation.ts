@@ -15,6 +15,8 @@ export class Relation
 
 	private _relayEvents: boolean;
 
+	public backwardRelation: Relation;
+
 	public constructor(name: string, type: RelationType, relatedMeta: CollectionMeta | EntityMeta, foreignKey: ForeignKey, relayEvents: boolean = false)
 	{
 		this._name = name;

@@ -35,6 +35,8 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 	private _transaction: Transaction = null;
 
+	private _transactionDeep: boolean = false;
+
 	private _transactionState: EntityState = {};
 
 	private _transactionRelMap: RelationMap = {};
@@ -136,13 +138,17 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return this._transaction;
 	}
 
-	public beginTransaction(transaction: Transaction = null, options: Object = {}): Transaction
+	public beginTransaction(deep: boolean = false, transaction: Transaction = null, options: Object = {}): Transaction
 	{
 		var i: number,
 			e: TransactionEvent;
 
-		if (this.hasTransaction() && (this._transaction !== transaction)) {
-			throw new Error('Transaction already strated!');
+		if (this.hasTransaction()) {
+			if (this._transaction === transaction) {
+				return this._transaction;
+			} else {
+				throw new Error('Transaction already strated!');
+			}
 		}
 
 		if (null === transaction) {
@@ -168,6 +174,12 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		this._fillState(this._transactionState);
 		this._fillRelMap(this._transactionRelMap);
 		this.relay(transaction, null, 1);
+
+		if (deep !== this._transactionDeep && deep) {
+			this._transactionDeep = deep;
+
+			// @todo
+		}
 
 		if (this.willDispatch(TransactionEvent.BEGIN)) {
 			e = new TransactionEvent(TransactionEvent.BEGIN, transaction, false, options);
@@ -313,7 +325,8 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			relation: Relation = this.entityMeta.getRelation(name),
 			e: RelationEvent,
 			newRelated: (Entity | Collection) = value,
-			oldRelated: (Entity | Collection) = this.getRelated(name);
+			oldRelated: (Entity | Collection) = this.getRelated(name),
+			transaction: Transaction = null;
 
 		// if (value.name !== relation.entityName) {
 		// 	throw new Error('Relation must has name: ' + relation.entityName + ' passed model with name: ' + value.name);
@@ -328,22 +341,40 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		}
 
 		if (false !== options) {
-			events = {
-				[this.entityMeta.name]: [
-					RelationEvent.BEFORE_CHANGE,
-					{
-						[RelationEvent.BEFORE_CHANGE]: [name]
-					}
-				]
-			};
+			events = [
+				RelationEvent.BEFORE_CHANGE,
+				{
+					[this.entityMeta.name]: [
+						RelationEvent.BEFORE_CHANGE,
+						{
+							[RelationEvent.BEFORE_CHANGE]: [name]
+						}
+					]
+				}
+			];
 
 			if (this.willDispatch(events)) {
 				e = new RelationEvent(events, this, name, newRelated, oldRelated, true, options);
 				this.dispatch(e);
 				if (e.isDefaultPrevented) {
+					if (this.hasTransaction()) {
+						this.getTransaction().rollback();
+					}
 					return false;
 				}
 			}
+		}
+
+		if (!this.hasTransaction()) {
+			transaction = this.beginTransaction();
+		}
+
+		if (newRelated) {
+			newRelated.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+		}
+
+		if (oldRelated) {
+			oldRelated.beginTransaction(this._transactionDeep, this.getTransaction(), options);
 		}
 
 		switch (relation.type) {
@@ -366,15 +397,22 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 				break;
 		}
 
-		if (false !== options) {
-			events = {
-				[this.entityMeta.name]: [
-					RelationEvent.CHANGED,
-					{
-						[RelationEvent.CHANGED]: [name]
-					}
-				]
-			};
+		if (transaction && !transaction.isFinished()) {
+			transaction.commit();
+		}
+
+		if (false !== options && !this.hasTransaction()) {
+			events = [
+				RelationEvent.CHANGED,
+				{
+					[this.entityMeta.name]: [
+						RelationEvent.CHANGED,
+						{
+							[RelationEvent.CHANGED]: [name]
+						}
+					]
+				}
+			];
 
 			if (this.willDispatch(events)) {
 				e = new RelationEvent(events, this, name, newRelated, oldRelated, false, options);
@@ -453,6 +491,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			}
 		]);
 		this._transaction = null;
+		this._transactionDeep = false;
 
 		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
 			field = this.entityMeta.fieldNames[i];
@@ -506,6 +545,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			}
 		]);
 		this._transaction = null;
+		this._transactionDeep = false;
 
 		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
 			fieldName = this.entityMeta.fieldNames[i];
@@ -536,7 +576,6 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 	private _assignBelongsTo(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, updateRelated: boolean): boolean
 	{
 		return true;
-
 		// var i: number,
 		// 	field: string,
 		// 	related: (Entity | Collection),
