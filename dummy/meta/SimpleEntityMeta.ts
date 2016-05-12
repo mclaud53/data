@@ -11,10 +11,10 @@ export class SimpleEntityMeta extends EntityMeta
 		var fieldTypeRegistry: FieldTypeRegistry = Registry.getInstance().getFieldTypeRegistry();
 		
 		super('Simple', SimpleEntity, 'id', [
-			new Field<number>('id', fieldTypeRegistry.getByName<number>('integer'), 0),
-			new Field<number>('value', fieldTypeRegistry.getByName<number>('float'), 0.0),
-			new Field<boolean>('flag', fieldTypeRegistry.getByName<boolean>('boolean'), false),
-			new Field<string>('title', fieldTypeRegistry.getByName<string>('string'), '')
+			new Field<number>('id', 'integer', 0),
+			new Field<number>('value', 'float', 0.0),
+			new Field<boolean>('flag', 'boolean', false),
+			new Field<string>('title', 'string', '')
 		]);
 	}
 }

@@ -1,17 +1,27 @@
 import {FieldType} from './FieldType';
 
+export type FieldTypeRegistryCallback<T> = (value: FieldType<T>) => void;
+
 export class FieldTypeRegistry
 {
 	private _name2FieldTypeMap: {
 		[key: string]: FieldType<any>;
 	} = {};
 
-	public getByName<T>(name: string): FieldType<T>
+	private _name2CallbackMap: {
+		[key: string]: FieldTypeRegistryCallback<any>[]
+	} = {};
+
+	public getByName<T>(name: string, callback: FieldTypeRegistryCallback<T>): void 
 	{
+		if (!this._name2CallbackMap.hasOwnProperty(name)) {
+			this._name2CallbackMap[name] = [];
+		}
+
+		this._name2CallbackMap[name].push(callback);
+
 		if (this.hasByName(name)) {
-			return this._name2FieldTypeMap[name];
-		} else {
-			throw new Error('FieldType "' + name + '" do\'t registered');
+			callback(this._name2FieldTypeMap[name]);	
 		}
 	}
 
@@ -37,7 +47,11 @@ export class FieldTypeRegistry
 			} else {
 				this._name2FieldTypeMap[fieldType.name] = fieldType;
 			}
-			
+			if (this._name2CallbackMap.hasOwnProperty(fieldType.name)) {
+				for (i = 0; i < this._name2CallbackMap[fieldType.name].length; i++) {
+					this._name2CallbackMap[fieldType.name][i](fieldType);
+				}
+			}
 		}
 		return this;
 	}
