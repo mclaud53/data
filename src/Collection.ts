@@ -377,7 +377,9 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		}
 
 		if (null === transaction) {
-			transaction = new Transaction();
+			transaction = transaction = Registry.getInstance()
+				.getTransactionRegistry()
+				.createTransaction();
 		} else if (transaction.isFinished()) {
 			throw new Error('Transaction already finished');
 		}

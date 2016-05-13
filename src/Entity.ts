@@ -189,7 +189,9 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		}
 
 		if (null === transaction) {
-			transaction = new Transaction();
+			transaction = Registry.getInstance()
+				.getTransactionRegistry()
+				.createTransaction();
 		} else if (transaction.isFinished()) {
 			throw new Error('Transaction already finished');
 		}
@@ -482,31 +484,43 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return true;
 	}
 
-	// public clear(): void
+	// public clear(options: boolean | Object = {}, force: boolean = false): boolean
 	// {
 	// 	var i: number,
-	// 		field: string;
+	// 		field: string,
+	// 		state: EntityState = {},
+	// 		ret: boolean;
 
 	// 	for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
 	// 		field = this.entityMeta.fieldNames[i];
 
-	// 		this._initialState[field] = this.entityMeta.fieldMap[field].defaultValue;
+	// 		state[field] = this.entityMeta.fieldMap[field].defaultValue;
 	// 	}
+
+	// 	ret = this.setState(state, options, force);
+	// 	if (ret) {
+	// 		this._initialState = state;
+	// 	}
+
+	// 	return ret;
 	// }
 
-	// public revert(): void
+	// public revert(options: boolean | Object = {}, force: boolean = false): boolean
 	// {
 	// 	var i: number,
-	// 		field: string;
+	// 		field: string,
+	// 		state: EntityState = {};
 
 	// 	for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
 	// 		field = this.entityMeta.fieldNames[i];
 
-	// 		this._currentState[field] = this._initialState[field];
+	// 		state[field] = this._initialState[field];
 	// 	}
+
+	// 	return this.setState(state, options, force);
 	// }
 
-	// public flush(): void
+	// public flush(state: EntityState = {}): void
 	// {
 	// 	var i: number,
 	// 		field: string;
