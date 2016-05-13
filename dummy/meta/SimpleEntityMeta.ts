@@ -1,6 +1,5 @@
 import {EntityMeta} from '../../src/meta/EntityMeta';
 import {Field} from '../../src/meta/Field';
-import {FieldTypeRegistry} from '../../src/meta/FieldTypeRegistry';
 import {Registry} from '../../src/Registry';
 import {SimpleEntity} from '../SimpleEntity';
 

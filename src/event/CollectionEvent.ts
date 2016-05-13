@@ -14,11 +14,6 @@ export class CollectionEvent extends Event<Collection>
 		return 'beforeAdd';
 	}
 
-	public static get BEFORE_CLEAR(): string
-	{
-		return 'beforeClear';
-	}
-
 	public static get BEFORE_REMOVE(): string
 	{
 		return 'beforeRemove';
@@ -27,11 +22,6 @@ export class CollectionEvent extends Event<Collection>
 	public static get BEFORE_REVERT(): string
 	{
 		return 'beforeRevert';
-	}
-
-	public static get CLEARED(): string
-	{
-		return 'cleared';
 	}
 
 	public static get REMOVED(): string

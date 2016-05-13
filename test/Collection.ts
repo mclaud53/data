@@ -107,11 +107,11 @@ describe('Collection', function()
 			actualCall: any[] = [];
 
 		instance.addListener(function(e: CollectionEvent) {
-			actualCall.push(e.type);
+			actualCall = actualCall.concat(instance['_transform'](e.type));
 		}, this);
 
 		instance.addEntity(entity);
-		assert.equal(actualCall.join(', '), 'beforeAdd,Simple:beforeAdd, added,Simple:added', 'Collection don\'t dispatch events');
+		assert.equal(actualCall.join(', '), 'Simple:beforeAdd, beforeAdd, Simple:added, added', 'Collection don\'t dispatch events');
 	});
 
 	it('remove events', function()
@@ -121,11 +121,11 @@ describe('Collection', function()
 			actualCall: any[] = [];
 
 		instance.addListener(function(e: CollectionEvent) {
-			actualCall.push(e.type);
+			actualCall = actualCall.concat(instance['_transform'](e.type));
 		}, this);
 
 		instance.removeEntity(entity);
-		assert.equal(actualCall.join(', '), 'beforeRemove,Simple:beforeRemove, removed,Simple:removed', 'Collection don\'t dispatch events');
+		assert.equal(actualCall.join(', '), 'Simple:beforeRemove, beforeRemove, Simple:removed, removed', 'Collection don\'t dispatch events');
 	});
 
 	it('clear events', function()
@@ -135,11 +135,11 @@ describe('Collection', function()
 			actualCall: any[] = [];
 
 		instance.addListener(function(e: CollectionEvent) {
-			actualCall.push(e.type);
+			actualCall = actualCall.concat(instance['_transform'](e.type));
 		}, this);
 
 		instance.removeAllEntities();
-		assert.equal(actualCall.join(', '), 'beforeRemove,Simple:beforeRemove, removed,Simple:removed', 'Collection don\'t dispatch events');
+		assert.equal(actualCall.join(', '), 'Simple:beforeRemove, beforeRemove, Simple:removed, removed', 'Collection don\'t dispatch events');
 	});
 
 	it('relay events from entities', function()

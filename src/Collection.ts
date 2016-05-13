@@ -1,4 +1,4 @@
-import {EventDispatcher, Event} from 'frog-event-dispatcher';
+import {EventDispatcher, Event, EventType} from 'frog-event-dispatcher';
 import {Registry} from './Registry';
 import {Entity} from './Entity';
 import {Transaction} from './Transaction';
@@ -113,7 +113,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 	{
 		var i: number,
 			event: CollectionEvent,
-			eventType: string[],
+			eventType: EventType,
 			addedEntities: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
@@ -133,7 +133,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		if (false !== options) {
 			eventType = [
 				CollectionEvent.BEFORE_ADD,
-				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_ADD
+				{ [this._collectionMeta.entityMeta.name]: CollectionEvent.BEFORE_ADD }
 			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, addedEntities, [], !force, options);
@@ -165,7 +165,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		if (false !== options && !this.hasTransaction()) {
 			eventType = [
 				CollectionEvent.ADDED,
-				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.ADDED
+				{ [this._collectionMeta.entityMeta.name]: CollectionEvent.ADDED }
 			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, addedEntities, [], false, options);
@@ -205,7 +205,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		var i: number,
 			index: number,
 			event: CollectionEvent,
-			eventType: string[],
+			eventType: EventType,
 			removedEntities: Entity[] = [];
 
 		for (i = 0; i < entities.length; i++) {
@@ -225,7 +225,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		if (false !== options) {
 			eventType = [
 				CollectionEvent.BEFORE_REMOVE,
-				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_REMOVE
+				{ [this._collectionMeta.entityMeta.name]: CollectionEvent.BEFORE_REMOVE }
 			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, [], removedEntities, !force, options);
@@ -253,7 +253,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		if (false !== options && !this.hasTransaction()) {
 			eventType = [
 				CollectionEvent.REMOVED,
-				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED
+				{ [this._collectionMeta.entityMeta.name]: CollectionEvent.REMOVED }
 			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, [], removedEntities, false, options);
@@ -273,7 +273,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 	{
 		var i: number,
 			event: CollectionEvent,
-			eventType: string[],
+			eventType: EventType,
 			removedEntities: Entity[] = [];
 
 		if (0 === this.length) {
@@ -291,7 +291,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		if (false !== options) {
 			eventType = [
 				CollectionEvent.BEFORE_REMOVE,
-				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.BEFORE_REMOVE
+				{ [this._collectionMeta.entityMeta.name]: CollectionEvent.BEFORE_REMOVE }
 			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, [], removedEntities, !force, options);
@@ -313,7 +313,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		if (false !== options && !this.hasTransaction()) {
 			eventType = [
 				CollectionEvent.REMOVED,
-				this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED
+				{ [this._collectionMeta.entityMeta.name]: CollectionEvent.REMOVED }
 			];
 			if (this.willDispatch(eventType)) {
 				event = new CollectionEvent(eventType, this, [], removedEntities, false, options);
@@ -411,7 +411,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		var i: number,
 			index: number,
 			e: CollectionEvent,
-			eventType: string[],
+			eventType: any[],
 			entity: Entity,
 			addedEntities: Entity[] = [],
 			removedEntities: Entity[] = [];
@@ -450,11 +450,11 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 			eventType = [];
 			if (addedEntities.length > 0) {
 				eventType.push(CollectionEvent.ADDED);
-				eventType.push(this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.ADDED);
+				eventType.push({ [this._collectionMeta.entityMeta.name]: CollectionEvent.ADDED });
 			}
 			if (removedEntities.length > 0) {
 				eventType.push(CollectionEvent.REMOVED);
-				eventType.push(this._collectionMeta.entityMeta.name + this.separator + CollectionEvent.REMOVED);
+				eventType.push({ [this._collectionMeta.entityMeta.name]: CollectionEvent.REMOVED });
 			}
 			if (this.willDispatch(eventType)) {
 				e = new CollectionEvent(eventType, this, addedEntities, removedEntities, false, event.options);

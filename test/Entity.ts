@@ -22,6 +22,18 @@ import {StringFieldType} from '../src/meta/type/StringFieldType';
 import {SimpleEntityMeta} from '../dummy/meta/SimpleEntityMeta';
 import {SimpleEntity} from '../dummy/SimpleEntity';
 
+import {AccountCollectionMeta} from '../dummy/meta/AccountCollectionMeta';
+import {AccountEntityMeta} from '../dummy/meta/AccountEntityMeta';
+import {CardCollectionMeta} from '../dummy/meta/CardCollectionMeta';
+import {CardEntityMeta} from '../dummy/meta/CardEntityMeta';
+import {UserEntityMeta} from '../dummy/meta/UserEntityMeta';
+
+import {AccountCollection} from '../dummy/AccountCollection';
+import {AccountEntity} from '../dummy/AccountEntity';
+import {CardCollection} from '../dummy/CardCollection';
+import {CardEntity} from '../dummy/CardEntity';
+import {UserEntity} from '../dummy/UserEntity';
+
 describe('Entity', function()
 {
 	Registry.getInstance()
@@ -36,10 +48,17 @@ describe('Entity', function()
 	Registry.getInstance()
 		.getMetaRegistry()
 		.register([
-			new SimpleEntityMeta()
-		], true);
+			new SimpleEntityMeta(),
+			new AccountEntityMeta(),
+			new CardEntityMeta(),
+			new UserEntityMeta()
+		], true)
+		.register([
+			new AccountCollectionMeta(),
+			new CardCollectionMeta()
+		])
 
-	it('creation', function()
+	it('creation', function ()
 	{
 		var instance: Entity = new SimpleEntity();
 
@@ -49,7 +68,7 @@ describe('Entity', function()
 		assert.equal(instance.getTransaction(), null, 'The new entity can\'t returns transaction');
 	});
 
-	it('get/set', function()
+	it('get/set', function ()
 	{
 		var instance: Entity = new SimpleEntity();
 
@@ -63,7 +82,8 @@ describe('Entity', function()
 		assert.equal(instance.get('title'), 'New title', 'The field "title" has a wrong value');
 	});
 
-	it('get initial', function() {
+	it('get initial', function ()
+	{
 		var instance: Entity = new SimpleEntity({
 				id: 3,
 				title: 'title'
@@ -81,7 +101,7 @@ describe('Entity', function()
 		assert.equal(instance.get('title', true), 'title', 'The field "title" has a wrong initial value');
 	});	
 
-	it('setState events', function()
+	it('setState events', function ()
 	{
 		var instance: Entity = new SimpleEntity({
 				id: 3,
@@ -101,7 +121,7 @@ describe('Entity', function()
 		assert.equal(callCount, 2, 'The entity should dispatch events');
 	});
 
-	it('silent setState', function()
+	it('silent setState', function ()
 	{
 		var instance: Entity = new SimpleEntity({
 				id: 3,
@@ -121,7 +141,7 @@ describe('Entity', function()
 		assert.equal(callCount, 0, 'The entity should not dispatch events');
 	});	
 
-	it('cancel setState', function()
+	it('cancel setState', function ()
 	{
 		var instance: Entity = new SimpleEntity({
 				id: 3,
@@ -191,7 +211,7 @@ describe('Entity', function()
 		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction commited');
 	});
 
-	it('transaction failed', function() {
+	it('transaction failed', function () {
 		var instance: Entity = new SimpleEntity({
 				id: 3,
 				title: 'Initial title'
@@ -233,7 +253,7 @@ describe('Entity', function()
 		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction rolled back');
 	});
 
-	it('rollback transaction if can\'t set field value', function()
+	it('rollback transaction if can\'t set field value', function ()
 	{
 		var instance: Entity = new SimpleEntity({
 				id: 3,
@@ -257,119 +277,254 @@ describe('Entity', function()
 		assert.equal(instance.hasTransaction(), false, 'Method "hasTransaction" must returns "false" after transaction rolled back');
 	});
 
-	// it('setRelated (belongsTo)', function () {
-	// 	var belongsTo: Entity = new Entity('belongsToEntity', {
-	// 			primaryId: new Field(0)
-	// 		}, ['primaryId'], {
-	// 			hasOne: new Relation(RelationType.HasOne, name, {
-	// 				primaryId: 'foreingId'
-	// 			})
-	// 		}, {primaryId: 5}),
-	// 		instance: Entity = new Entity(name, fields, primary, relations);
+	it('setRelated (belongsTo <-> hasOne)', function ()
+	{
+		var account: AccountEntity = new AccountEntity({
+				accountId: 2,
+				balance: 100
+			}),
+			card: CardEntity = new CardEntity({
+				cardId: 3,
+				number: 'XXXX-XXXX-XXXX-XXXX'
+			});
 
-	// 	assert.equal(instance.hasRelated('belongsTo'), false, 'The new entity has no related entities');
-	// 	assert.equal(instance.setRelated('belongsTo', belongsTo), true, 'The assign releated failed');
-	// 	assert.equal(instance.hasRelated('belongsTo'), true, 'The entity must have related entity');
-	// 	assert.equal(instance.get('foreignId'), 5, 'The foreign key must be updated while set relation');
-	// });
+		assert.equal(card.hasRelated('account'), false, 'The new entity has no related entities (belongsTo -> hasOne)');
+		assert.equal(account.hasRelated('card'), false, 'The new entity has no related entities (hasOne -> belongsTo)');
 
-	// it('setRelated (belongsTo) throw error if pass collection instead entity', function () {
-	// 	var instance: Entity = new Entity(name, fields, primary, relations),
-	// 		actual: boolean = false;
+		assert.equal(card.setRelated('account', account), true, 'The assign releated failed');
 
-	// 	try {
-	// 		instance.setRelated('belongsTo', new Collection('belongsToEntity'));
-	// 	} catch (e) {
-	// 		actual = true;
-	// 	}
+		assert.equal(card.hasRelated('account'), true, 'The entity must have related entity (belongsTo -> hasOne)');
+		assert.equal(account.hasRelated('card'), true, 'The entity must have related entity (hasOne -> belongsTo)');
 
-	// 	assert.equal(actual, true, 'Entity must throw error if pass collection instead entity');
-	// });
+		assert.equal(card.get('accountId'), 2, 'The foreign key must be updated while set relation');
+	});	
 
-	// it('setRelated (belongsTo) relayEvents', function () {
-	// 	var belongsTo: Entity = new Entity('belongsToEntity', {
-	// 			primaryId: new Field(0),
-	// 			value: new Field(0)
-	// 		}, ['primaryId'], {
-	// 			hasOne: new Relation(RelationType.HasOne, name, {
-	// 				primaryId: 'foreignId'
-	// 			})
-	// 		}, {primaryId: 5}),
-	// 		instance: Entity = new Entity(name, fields, primary, relations),
-	// 		actualCallCount: number = 0;
+	it('setRelated (belongsTo <-> hasOne) throw error if pass collection instead entity', function()
+	{
+		var instance: CardEntity = new CardEntity(),
+			actual: boolean = false;
 
-	// 	instance.setRelated('belongsTo', belongsTo);
-	// 	instance.addListener(function (e: entev.EntityEvent): void {
-	// 		actualCallCount++;
-	// 	}, this, 'belongsToEntity:changed:value');
-	// 	belongsTo.set('value', 5);
-	// 	assert.equal(actualCallCount, 1, 'Entity must relay events from related entities');
-	// });	
+		try {
+			instance.setRelated('account', new AccountCollection());
+		} catch (e) {
+			actual = true;
+		}
 
-	// it('setRelated (belongsTo) update cascade', function () {
-	// 	var belongsTo: Entity = new Entity('belongsToEntity', {
-	// 			primaryId: new Field(0)
-	// 		}, ['primaryId'], {
-	// 			hasOne: new Relation(RelationType.HasOne, name, {
-	// 				primaryId: 'foreingId'
-	// 			})
-	// 		}, {primaryId: 5}),
-	// 		instance: Entity = new Entity(name, fields, primary, relations);
+		assert.equal(actual, true, 'Entity must throw error if pass collection instead entity');
+	});
 
-	// 	instance.setRelated('belongsTo', belongsTo);
-	// 	assert.equal(instance.get('foreignId'), 5, 'Foreign key has a wrong value');
-	// 	belongsTo.set('primaryId', 12);
-	// 	assert.equal(instance.get('foreignId'), 12, 'BelongsTo relation must be updated cascade');
-	// });
+	it('setRelated (belongsTo <-> hasOne) relayEvents', function ()
+	{
+		var account: AccountEntity = new AccountEntity({}),
+			card: CardEntity = new CardEntity({}, {
+				account: account
+			}),
+			accountEvent: boolean = false,
+			cardEvent: boolean = false;
 
-	// it('setRelated (hasOne)', function () {
-	// 	var hasOne: Entity = new Entity('hasOneEntity', {
-	// 			primaryId: new Field(0),
-	// 			foreingId: new Field(0)
-	// 		}, ['primaryId'], {
-	// 			belongsTo: new Relation(RelationType.BelongsTo, name, {
-	// 				foreingId: 'id'
-	// 			})
-	// 		}, {primaryId: 5}),
-	// 		instance: Entity = new Entity(name, fields, primary, relations, {id: 8});
+		account.addListener(function(e: EntityEvent): void {
+			cardEvent = true;
+		}, this, 'Card:changed:number');
 
-	// 	assert.equal(instance.hasRelated('hasOne'), false, 'The new entity has no related entities');
-	// 	assert.equal(instance.setRelated('hasOne', hasOne), true, 'The assign releated failed');
-	// 	assert.equal(instance.hasRelated('hasOne'), true, 'The entity must have related entity');
-	// 	assert.equal(hasOne.get('foreingId'), 8, 'The foreign key must be updated while set relation');
-	// });
+		card.set('number', 'XXXX-XXXX-XXXX-XXXX');
 
-	// it('setRelated (hasOne) throw error if pass collection instead entity', function () {
-	// 	var instance: Entity = new Entity(name, fields, primary, relations),
-	// 		actual: boolean = false;
+		assert.equal(cardEvent, true, 'Event "Card:changed:number" must be fired');
 
-	// 	try {
-	// 		instance.setRelated('hasOne', new Collection('hasOneEntity'));
-	// 	} catch (e) {
-	// 		actual = true;
-	// 	}
+		card.addListener(function(e: EntityEvent): void {
+			accountEvent = true;
+		}, this, 'Account:changed:balance');
 
-	// 	assert.equal(actual, true, 'Entity must throw error if pass collection instead entity');
-	// });
+		account.set('balance', 100);
 
-	// it('setRelated (hasOne) relayEvents', function () {
-	// 	var hasOne: Entity = new Entity('hasOneEntity', {
-	// 			primaryId: new Field(0),
-	// 			foreingId: new Field(0),
-	// 			value: new Field(0)
-	// 		}, ['primaryId'], {
-	// 			belongsTo: new Relation(RelationType.BelongsTo, name, {
-	// 				foreingId: 'id'
-	// 			})
-	// 		}, {primaryId: 5}),
-	// 		instance: Entity = new Entity(name, fields, primary, relations),
-	// 		actualCallCount: number = 0;
+		assert.equal(accountEvent, true, 'Event "Account:changed:balance" must be fired');
+	});	
 
-	// 	instance.setRelated('hasOne', hasOne);
-	// 	instance.addListener(function (e: entev.EntityEvent): void {
-	// 		actualCallCount++;
-	// 	}, this, 'hasOneEntity:changed:value');
-	// 	hasOne.set('value', 5);
-	// 	assert.equal(actualCallCount, 1, 'Entity must relay events from related entities');
-	// });		
+	it('setRelated (belongsTo <-> hasOne) update cascade', function ()
+	{
+		var account: AccountEntity = new AccountEntity({
+				accountId: 3
+			}),
+			card: CardEntity = new CardEntity({}, {
+				account: account
+			});
+
+		assert.equal(card.get('accountId'), 3, 'Foreign key has a wrong value');
+		account.set('accountId', 12);
+		assert.equal(card.get('accountId'), 12, 'BelongsTo relation must be updated cascade');
+	});
+
+	it('setRelated (belongsTo <-> hasMany)', function ()
+	{
+		var card: CardEntity = new CardEntity({
+				cardId: 3,
+				number: 'XXXX-XXXX-XXXX-XXXX'
+			}),
+			user: UserEntity = new UserEntity({
+				userId: 5
+			});
+
+		assert.equal(card.hasRelated('user'), false, 'The new entity has no related entities (belongsTo -> hasMany)');
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card), false, 'The new entity has no related entities (hasMany -> belongsTo)');
+
+		assert.equal(card.setRelated('user', user), true, 'The assign releated failed');
+
+		assert.equal(card.hasRelated('user'), true, 'The entity must have related entity (belongsTo -> hasMany)');
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card), true, 'The entity must have related entity (hasMany -> belongsTo)');
+
+		assert.equal(card.get('userId'), 5, 'The foreign key must be updated while set relation');
+	});
+
+	it('setRelated (belongsTo <-> hasMany) relayEvents', function ()
+	{
+		var user: UserEntity = new UserEntity(),
+			card: CardEntity = new CardEntity({}, {
+				user: user
+			}),
+			userEvent: boolean = false,
+			cardEvent: boolean = false;
+
+		user.addListener(function(e: EntityEvent): void {
+			cardEvent = true;
+		}, this, 'Card:changed:number');
+
+		card.set('number', 'XXXX-XXXX-XXXX-XXXX');
+
+		assert.equal(cardEvent, true, 'Event "Card:changed:number" must be fired');
+
+		card.addListener(function(e: EntityEvent): void {
+			userEvent = true;
+		}, this, 'User:changed:name');
+
+		user.set('name', 'John Snow');
+
+		assert.equal(userEvent, true, 'Event "User:changed:name" must be fired');
+	});
+
+	it('setRelated (belongsTo <-> hasMany) update cascade', function ()
+	{
+		var user: UserEntity = new UserEntity({
+				userId: 3
+			}),
+			card: CardEntity = new CardEntity({}, {
+				user: user
+			});
+
+		assert.equal(card.get('userId'), 3, 'Foreign key has a wrong value');
+		user.set('userId', 12);
+		assert.equal(card.get('userId'), 12, 'BelongsTo relation must be updated cascade');
+	});
+
+	it('setRelated (hasOne <-> belongsTo)', function ()
+	{
+		var account: AccountEntity = new AccountEntity({
+				accountId: 2,
+				balance: 100
+			}),
+			card: CardEntity = new CardEntity({
+				cardId: 3,
+				number: 'XXXX-XXXX-XXXX-XXXX'
+			});
+
+		assert.equal(account.hasRelated('card'), false, 'The new entity has no related entities (hasOne -> belongsTo)');
+		assert.equal(card.hasRelated('account'), false, 'The new entity has no related entities (belongsTo -> hasOne)');
+
+		assert.equal(account.setRelated('card', card), true, 'The assign releated failed');
+
+		assert.equal(account.hasRelated('card'), true, 'The entity must have related entity (hasOne -> belongsTo)');
+		assert.equal(card.hasRelated('account'), true, 'The entity must have related entity (belongsTo -> hasOne)');
+
+		assert.equal(card.get('accountId'), 2, 'The foreign key must be updated while set relation');
+	});
+
+	it('setRelated (hasOne <-> belongsTo) throw error if pass collection instead entity', function ()
+	{
+		var instance: AccountEntity = new AccountEntity(),
+			actual: boolean = false;
+
+		try {
+			instance.setRelated('card', new CardCollection());
+		} catch (e) {
+			actual = true;
+		}
+
+		assert.equal(actual, true, 'Entity must throw error if pass collection instead entity');
+	});
+
+	it('setRelated (hasMany <-> belongsTo)', function()
+	{
+		var user: UserEntity = new UserEntity({
+			userId: 3
+		}),
+			card1: CardEntity = new CardEntity({
+				cardId: 1
+			}, {
+					user: user
+				}),
+			card2: CardEntity = new CardEntity({
+				cardId: 2
+			}),
+			cards: CardCollection = new CardCollection([card2]);
+
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card1), true, 'The UserEntity must have related CardEntity[1] before setRelated (hasMany -> belongsTo)');
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card2), false, 'The UserEntity has no related CardEntity[2] before setRelated (hasMany -> belongsTo)');
+		assert.equal(card1.hasRelated('user'), true, 'The CardEntity[1] must have related UserEntity before setRelated (belongsTo -> hasMany)');
+		assert.equal(card2.hasRelated('user'), false, 'The CardEntity[2] must have related UserEntity before setRelated (belongsTo -> hasMany)');
+
+		assert.equal(user.setRelated('card', cards), true, 'The assign releated failed');
+
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card1), false, 'The UserEntity must have related CardEntity[1] after setRelated (hasMany -> belongsTo)');
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card2), true, 'The UserEntity must have related CardEntity[2] after setRelated (hasMany -> belongsTo)');
+		assert.equal(card1.hasRelated('user'), false, 'The CardEntity[1] must have related UserEntity after setRelated (belongsTo -> hasMany)');
+		assert.equal(card2.hasRelated('user'), true, 'The CardEntity[2] must have related UserEntity after setRelated (belongsTo -> hasMany)');
+
+		assert.equal(card1.get('userId'), 0, 'The foreign key must be updated while clear relation');
+		assert.equal(card2.get('userId'), 3, 'The foreign key must be updated while set relation');
+	});
+
+	it('setRelated (hasMany <-> belongsTo) throw error if pass entity instead collection', function ()
+	{
+		var instance: UserEntity = new UserEntity(),
+			actual: boolean = false;
+
+		try {
+			instance.setRelated('card', new CardEntity());
+		} catch (e) {
+			actual = true;
+		}
+
+		assert.equal(actual, true, 'Entity must throw error if pass entity instead collection');
+	});
+
+	it('(hasMany <-> belongsTo) addEntity & removeEntity', function ()
+	{
+		var user: UserEntity = new UserEntity({
+				userId: 3
+			}),
+			card1: CardEntity = new CardEntity({
+				cardId: 1
+			}, {
+				user: user
+			}),
+			card2: CardEntity = new CardEntity({
+				cardId: 2
+			});
+
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card1), true, 'The UserEntity must have related CardEntity[1] before removeEntity (hasMany -> belongsTo)');
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card2), false, 'The UserEntity has no related CardEntity[2] before addEntity (hasMany -> belongsTo)');
+		assert.equal(card1.hasRelated('user'), true, 'The CardEntity[1] must have related UserEntity before removeEntity (belongsTo -> hasMany)');
+		assert.equal(card2.hasRelated('user'), false, 'The CardEntity[2] has no related UserEntity before addEntity (belongsTo -> hasMany)');
+
+		assert.equal(user.getRelated<CardCollection>('card').addEntity(card2), true, 'The add releated entity failed');
+		assert.equal(user.getRelated<CardCollection>('card').removeEntity(card1), true, 'The remove releated entity failed');
+
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card1), false, 'The UserEntity has no related CardEntity[1] after removeEntity (hasMany -> belongsTo)');
+		assert.equal(user.getRelated<CardCollection>('card').hasEntity(card2), true, 'The UserEntity must have related CardEntity[2] after addEntity (hasMany -> belongsTo)');
+		assert.equal(card1.hasRelated('user'), false, 'The CardEntity[1] has no related UserEntity after removeEntity (belongsTo -> hasMany)');
+		assert.equal(card2.hasRelated('user'), true, 'The CardEntity[2] must have related UserEntity after addEntity (belongsTo -> hasMany)');
+
+		assert.equal(card1.get('userId'), 0, 'The foreign key must be updated while clear relation');
+		assert.equal(card2.get('userId'), 3, 'The foreign key must be updated while set relation');
+
+	});
+
 });

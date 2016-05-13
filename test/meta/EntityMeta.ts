@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 require('sinomocha')();
 
+import {SimpleEntity} from '../../dummy/SimpleEntity';
 import {EntityMeta} from '../../src/meta/EntityMeta';
 import {Entity} from '../../src/Entity';
 import {EntityClass} from '../../src/meta/EntityClass';
@@ -13,7 +14,7 @@ describe('EntityMeta', function()
 	it('creation', function()
 	{
 		var name: string = 'SomeEntity',
-			entityClass: EntityClass = Entity,
+			entityClass: EntityClass = SimpleEntity,
 			primaryKey: string = 'primaryKey',
 			instance: EntityMeta = new EntityMeta(name, entityClass, primaryKey, [
 					new Field<number>('primaryKey', new FieldType<number>('number'), 0)

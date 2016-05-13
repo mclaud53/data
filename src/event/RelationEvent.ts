@@ -1,6 +1,6 @@
 import {Event, EventType} from 'frog-event-dispatcher';
 import {Entity} from '../Entity';
-import {Collection} from '../Collection';
+import {RelatedMap} from '../RelatedMap';
 
 export class RelationEvent extends Event<Entity>
 {
@@ -14,30 +14,30 @@ export class RelationEvent extends Event<Entity>
 		return 'relationChanged';
 	}
 
-	private _relationName: string;
-	private _newInstance: Entity | Collection;
-	private _oldInstance: Entity | Collection;
+	private _relationNames: string[];
+	private _newRelatedMap: RelatedMap;
+	private _oldRelatedMap: RelatedMap;
 
-	public constructor(type: EventType, target: Entity, relationName: string, newInstance: Entity | Collection, oldInstance: Entity | Collection, cancellable: boolean, options?: Object)
+	public constructor(type: EventType, target: Entity, relationNames: string[], newRelatedMap: RelatedMap, oldRelatedMap: RelatedMap, cancellable: boolean, options?: Object)
 	{
 		super(type, target, cancellable, options);
-		this._relationName = relationName;
-		this._newInstance = newInstance;
-		this._oldInstance = oldInstance;
+		this._relationNames = relationNames;
+		this._newRelatedMap = newRelatedMap;
+		this._oldRelatedMap = oldRelatedMap;
 	}
 
-	public get relationName(): string
+	public get relationNames(): string[]
 	{
-		return this._relationName;
+		return this._relationNames;
 	}
 
-	public get newInstance(): Entity | Collection
+	public get newRelatedMap(): RelatedMap
 	{
-		return this._newInstance;
+		return this._newRelatedMap;
 	}
 
-	public get oldInstance(): Entity | Collection
+	public get oldRelatedMap(): RelatedMap
 	{
-		return this._oldInstance;
+		return this._oldRelatedMap;
 	}
 }

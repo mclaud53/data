@@ -1,21 +1,21 @@
-/// <reference path="../typings/main.d.ts" />
+/// <reference path="main.d.ts" />
 
-import {EventDispatcher, Event} from 'frog-event-dispatcher';
-import {RelationType} from './meta/RelationType';
+import {EventDispatcher, Event, EventType, Listener} from 'frog-event-dispatcher';
+import {Field} from './meta/Field';
 import {Relation} from './meta/Relation';
+import {RelationType} from './meta/RelationType';
+import {CollectionMeta} from './meta/CollectionMeta';
 import {EntityMeta} from './meta/EntityMeta';
 import {Registry} from './Registry';
+import {CollectionEvent} from './event/CollectionEvent';
 import {EntityEvent} from './event/EntityEvent';
 import {RelationEvent} from './event/RelationEvent';
 import {TransactionEvent} from './event/TransactionEvent';
 import {Collection} from './Collection';
 import {Transaction} from './Transaction';
+import {RelatedMap} from './RelatedMap';
 
 export type EntityState = { [key: string]: any; };
-
-export type RelationMap = {
-	[key: string]: (Entity | Collection)
-};
 
 export abstract class Entity extends EventDispatcher<Event<any>, any>
 {
@@ -27,11 +27,11 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 	private _initialState: EntityState = {};
 
-	private _initialRelMap: RelationMap = {};
+	private _initialRelMap: RelatedMap = {};
 
 	private _currentState: EntityState = {};
 
-	private _currentRelMap: RelationMap = {};
+	private _currentRelMap: RelatedMap = {};
 
 	private _transaction: Transaction = null;
 
@@ -39,9 +39,9 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 	private _transactionState: EntityState = {};
 
-	private _transactionRelMap: RelationMap = {};
+	private _transactionRelMap: RelatedMap = {};
 
-	public constructor(state: EntityState = null, relMap: RelationMap = null, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
+	public constructor(state: EntityState = {}, relMap: RelatedMap = {}, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
 	{
 		super();
 
@@ -67,19 +67,17 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 	private _initState(state: EntityState = null): void
 	{
 		var i: number,
+			field: Field<any>,
 			name: string,
 			value: any;
 
-		if (null === state) {
-			state = {};
-		}
-
 		for (i = 0; i < this.entityMeta.fields.length; i++) {
-			name = this.entityMeta.fields[i].name;
+			field = this.entityMeta.fields[i];
+			name = field.name;
 			if (state.hasOwnProperty(name)) {
 				value = state[name]
 			} else {
-				value = this.entityMeta.fields[i].defaultValue;
+				value = field.defaultValue;
 			}
 
 			this._initialState[name] = value;
@@ -87,9 +85,38 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		}
 	}
 
-	private _initRelMap(relMap: RelationMap = null): void
+	private _initRelMap(relMap: RelatedMap = null): void
 	{
-		// @todo
+		var i: number,
+			rel: Relation,
+			relMeta: CollectionMeta | EntityMeta,
+			name: string,
+			value: Entity | Collection;
+
+		for (i = 0; i < this.entityMeta.relations.length; i++) {
+			rel = this.entityMeta.relations[i];
+			relMeta = rel.relatedMeta;
+			name = rel.name;
+			value = null;
+			if (relMap.hasOwnProperty(name) && (null !== relMap[name])) {
+				if (relMeta instanceof EntityMeta) {
+					if (relMap[name] instanceof relMeta.entityClass) {
+						value = relMap[name];
+					}
+				} else if (relMeta instanceof CollectionMeta) {
+					if (relMap[name] instanceof relMeta.collectionClass) {
+						value = relMap[name];
+					}
+				}
+			} else if (relMeta instanceof CollectionMeta) {
+				value = new relMeta.collectionClass([], rel.relayEvents);
+			}
+			this._initialRelMap[name] = value;
+			this._currentRelMap[name] = null;
+			if (null !== value) {
+				this.setRelated(name, value, false, true);
+			}
+		}
 	}
 
 	public get entityMeta(): EntityMeta
@@ -141,6 +168,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 	public beginTransaction(deep: boolean = false, transaction: Transaction = null, options: Object = {}): Transaction
 	{
 		var i: number,
+			rel: Relation,
 			e: TransactionEvent;
 
 		if (this.hasTransaction()) {
@@ -178,7 +206,18 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		if (deep !== this._transactionDeep && deep) {
 			this._transactionDeep = deep;
 
-			// @todo
+			for (i = 0; i < this.entityMeta.relations.length; i++) {
+				rel = this.entityMeta.relations[i];
+				// if (RelationType.BelongsTo === rel.type) {
+				// 	continue;
+				// }
+
+				if (this._currentRelMap[rel.name] instanceof Entity) {
+					this._currentRelMap[rel.name].beginTransaction(deep, transaction, options);
+				} else if (this._currentRelMap[rel.name] instanceof Collection) {
+					this._currentRelMap[rel.name].beginTransaction(deep, transaction, options);
+				}
+			}
 		}
 
 		if (this.willDispatch(TransactionEvent.BEGIN)) {
@@ -284,6 +323,8 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			this._currentState[field] = newState[field];
 		}
 
+		// @todo PrimaryKey & ForeignKey ???
+
 		if (false !== options && !this.hasTransaction()) {
 			events = [
 				EntityEvent.CHANGED,
@@ -306,7 +347,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return true;
 	}
 
-	public getRelated(name: string, initial: boolean = false): (Entity | Collection)
+	public getRelated<T extends (Entity | Collection)>(name: string, initial: boolean = false): T
 	{
 		return initial ? this._initialState[name] : this._currentRelMap[name];
 	}
@@ -319,18 +360,27 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return !!this._currentRelMap[name];
 	}
 
-	public setRelated(name: string, value: (Entity | Collection), options: boolean | Object = {}, updateRelated: boolean = true): boolean
+	public setRelated(name: string, value: (Entity | Collection), options: boolean | Object = {}, force: boolean = false, updateRelated: boolean = true): boolean
 	{
 		var events: any,
 			relation: Relation = this.entityMeta.getRelation(name),
+			relatedMeta: EntityMeta | CollectionMeta = relation.relatedMeta,
 			e: RelationEvent,
 			newRelated: (Entity | Collection) = value,
 			oldRelated: (Entity | Collection) = this.getRelated(name),
 			transaction: Transaction = null;
 
-		// if (value.name !== relation.entityName) {
-		// 	throw new Error('Relation must has name: ' + relation.entityName + ' passed model with name: ' + value.name);
-		// }
+		if (null !== value) {
+			if (relatedMeta instanceof EntityMeta) {
+				if (!(value instanceof relatedMeta.entityClass)) {
+					throw new Error('For relation "' + relation.name + '" of entity "' + this.entityMeta.name + '" value must be entity of class "' + relatedMeta.name + '"');
+				}
+			} else if (relatedMeta instanceof CollectionMeta) {
+				if (!(value instanceof relatedMeta.collectionClass)) {
+					throw new Error('For relation "' + relation.name + '" of entity "' + this.entityMeta.name + '" value must be collection of class "' + relatedMeta.entityMeta.name + '"');
+				}
+			}
+		}
 
 		if (this._currentRelMap[name] === value) {
 			return true;
@@ -354,7 +404,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			];
 
 			if (this.willDispatch(events)) {
-				e = new RelationEvent(events, this, name, newRelated, oldRelated, true, options);
+				e = new RelationEvent(events, this, [name], { [name]: newRelated }, { [name]: oldRelated }, !force, options);
 				this.dispatch(e);
 				if (e.isDefaultPrevented) {
 					if (this.hasTransaction()) {
@@ -379,19 +429,19 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 		switch (relation.type) {
 			case RelationType.BelongsTo:
-				if (!this._assignBelongsTo(name, relation, newRelated, oldRelated, options, updateRelated)) {
+				if (!this._assignBelongsTo(name, relation, newRelated, oldRelated, options, force, updateRelated)) {
 					return false;
 				}
 				break;
 
 			case RelationType.HasOne:
-				if (!this._assignHasOne(name, relation, newRelated, oldRelated, options, updateRelated)) {
+				if (!this._assignHasOne(name, relation, newRelated, oldRelated, options, force, updateRelated)) {
 					return false;
 				}
 				break;
 
 			case RelationType.HasMany:
-				if (!this._assignHasMany(name, relation, newRelated, oldRelated, options, updateRelated)) {
+				if (!this._assignHasMany(name, relation, newRelated, oldRelated, options, force, updateRelated)) {
 					return false;
 				}
 				break;
@@ -415,7 +465,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			];
 
 			if (this.willDispatch(events)) {
-				e = new RelationEvent(events, this, name, newRelated, oldRelated, false, options);
+				e = new RelationEvent(events, this, [name], { [name]: newRelated }, { [name]: oldRelated }, false, options);
 				this.dispatch(e);
 			}
 		}
@@ -423,7 +473,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return true;
 	}
 
-	public clear(): boolean
+	public clear(): void
 	{
 		var i: number,
 			field: string;
@@ -433,13 +483,9 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 			this._initialState[field] = this.entityMeta.fieldMap[field].defaultValue;
 		}
-
-		this.revert();
-
-		return true;
 	}
 
-	public revert(): boolean
+	public revert(): void
 	{
 		var i: number,
 			field: string;
@@ -449,8 +495,6 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 			this._currentState[field] = this._initialState[field];
 		}
-
-		return true;
 	}
 
 	public flush(): void
@@ -463,8 +507,6 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 			this._initialState[field] = this._currentState[field];
 		}
-
-		this.revert();
 	}
 
 	private onTransactionCommit(event: TransactionEvent, extra: Object): void
@@ -472,10 +514,16 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		var i: number,
 			field: string,
 			fields: string[] = [],
-			e: EntityEvent,
+			relation: string,
+			relations: string[] = [],
+			relMap: RelatedMap,
+			ee: EntityEvent,
+			re: RelationEvent,
 			events: any,
+			newState: EntityState = this._currentState,
 			oldState: EntityState = this._transactionState,
-			newState: EntityState = this._currentState;
+			newRelMap: RelatedMap = {},
+			oldRelMap: RelatedMap = {};
 
 		this.unrelay(this._transaction);
 		this._transaction.removeListeners([
@@ -506,6 +554,19 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			fields.push(field);
 		}
 
+		for (i = 0; i < this.entityMeta.relationNames.length; i++) {
+			relation = this.entityMeta.relationNames[i];
+			if (!this._transactionRelMap.hasOwnProperty(relation)) {
+				continue;
+			}
+			if (this._transactionRelMap[relation] === this._currentRelMap[relation]) {
+				continue;
+			}
+			newRelMap[relation] = this._currentRelMap[relation];
+			oldRelMap[relation] = this._transactionRelMap[relation];
+			relations.push(relation);
+		}
+
 		if (fields.length > 0) {
 			events = [
 				EntityEvent.CHANGED,
@@ -520,8 +581,27 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			];
 
 			if (this.willDispatch(events)) {
-				e = new EntityEvent(events, this, fields, newState, oldState, false, event.options);
-				this.dispatch(e);
+				ee = new EntityEvent(events, this, fields, newState, oldState, false, event.options);
+				this.dispatch(ee);
+			}
+		}
+
+		if (relations.length > 0) {
+			events = [
+				RelationEvent.CHANGED,
+				{
+					[this.entityMeta.name]: [
+						RelationEvent.CHANGED,
+						{
+							[RelationEvent.CHANGED]: relations
+						}
+					]
+				}
+			];
+
+			if (this.willDispatch(events)) {
+				re = new RelationEvent(events, this, relations, newRelMap, oldRelMap, false, event.options);
+				this.dispatch(re);
 			}
 		}
 	}
@@ -529,7 +609,9 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 	private onTransactionRollback(e: TransactionEvent, extra: Object): void
 	{
 		var i: number,
-			fieldName: string;
+			fieldName: string,
+			rel: Relation,
+			relName: string;
 
 		this.unrelay(this._transaction);
 		this._transaction.removeListeners([
@@ -554,6 +636,22 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			}
 			this._currentState[fieldName] = this._transactionState[fieldName];
 		}
+
+		for (i = 0; i < this.entityMeta.relations.length; i++) {
+			rel = this.entityMeta.relations[i];
+			relName = rel.name;
+			if (!this._transactionRelMap.hasOwnProperty(relName)) {
+				continue;
+			}
+			if (rel.relayEvents && null !== this._currentRelMap[relName]) {
+				this.unrelay(this._currentRelMap[relName]);
+			}
+			this._currentRelMap[relName] = this._transactionRelMap[relName];
+			if (rel.relayEvents && null !== this._transactionRelMap[relName]) {
+				this.relay(this._transactionRelMap[relName]);
+				this.unrelay(this._transactionRelMap[relName], [TransactionEvent.BEGIN, TransactionEvent.COMMIT, TransactionEvent.ROLLBACK]);
+			}
+		}
 	}
 
 	private onRelatedEntityChanged(e: EntityEvent, extra: Object): void
@@ -564,292 +662,271 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			related: Entity = e.target,
 			state: EntityState = this.getState();
 
-		// for (field in relation.fieldsMap) {
-		// 	state[field] = related.get(relation.fieldsMap[field]);
-		// }
+		for (field in relation.foreignKey) {
+			state[field] = related.get(relation.foreignKey[field]);
+		}
 
-		if (!this.setState(state, e.options)) {
-			// @todo
+		this.setState(state, e.options, true);
+	}
+
+	private onRelatedCollectionModified(e: CollectionEvent, extra: Object): void
+	{
+		var i: number,
+			name: string = extra['name'],
+			transaction: Transaction = null,
+			backwardRelation: Relation = this.entityMeta.getBackwardRelation(name);
+
+		if (null === backwardRelation) {
+			return;
+		}
+
+		if (this.getRelated(name) !== e.target) {
+			return;
+		}
+
+		if (!this.hasTransaction()) {
+			for (i = 0; i < e.addedEntites.length; i++) {
+				if (e.addedEntites[i].hasTransaction()) {
+					this.beginTransaction(false, e.addedEntites[i].getTransaction());
+					break;
+				}
+			}
+		}
+
+		if (!this.hasTransaction()) {
+			for (i = 0; i < e.removedEntites.length; i++) {
+				if (e.removedEntites[i].hasTransaction()) {
+					this.beginTransaction(false, e.removedEntites[i].getTransaction());
+					break;
+				}
+			}
+		}
+
+		if (!this.hasTransaction()) {
+			transaction = this.beginTransaction();
+		}
+
+		for (i = 0; i < e.addedEntites.length; i++) {
+			e.addedEntites[i].beginTransaction(false, this.getTransaction());
+			e.addedEntites[i].setRelated(backwardRelation.name, this, e.options, true, false);
+		}
+
+		for (i = 0; i < e.removedEntites.length; i++) {
+			e.removedEntites[i].beginTransaction(false, this.getTransaction());
+			e.removedEntites[i].setRelated(backwardRelation.name, null, e.options, true, false);
+		}
+
+		if (null !== transaction) {
+			transaction.commit();
 		}
 	}
 
-	private _assignBelongsTo(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, updateRelated: boolean): boolean
+	private _assignBelongsTo(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, force: boolean, updateRelated: boolean): boolean
 	{
-		return true;
-		// var i: number,
-		// 	field: string,
-		// 	related: (Entity | Collection),
-		// 	tmpRelated: (Entity | Collection),
-		// 	backwardRelationName: string,
-		// 	newState: EntityState = this.getState(),
-		// 	oldState: EntityState = this.getState(),
-		// 	fields: string[] = [],
-		// 	events: Object,
-		// 	token: string,
-		// 	suspended: (Entity | Collection)[] = [],
-		// 	ret: boolean = true;
+		var i: number,
+			field: string,
+			related: Collection,
+			backwardRelation: Relation = updateRelated ? this.entityMeta.getBackwardRelation(relation) : null,
+			backwardRelationMeta: CollectionMeta | EntityMeta,
+			newState: EntityState = this.getState(),
+			oldState: EntityState = this.getState(),
+			fields: string[] = [],
+			eventType: EventType,
+			ret: boolean = true;
 
-		// token = this.suspend(true);
-		// suspended.push(this);
-		// try {
-		// 	if (ret && (oldRelated instanceof Entity)) {
-		// 		oldRelated.suspend(true, token);
-		// 		suspended.push(oldRelated);
-		// 		if (relation.relayEvents) {
-		// 			this.unrelay(oldRelated);
-		// 		}
+		for (field in relation.foreignKey) {
+			fields.push(relation.foreignKey[field]);
+		}
 
-		// 		if (updateRelated) {
-		// 			backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
-		// 			if (null !== backwardRelationName) {
-		// 				if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
-		// 					ret = false;
-		// 				}
-		// 			} else {
-		// 				backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
-		// 				if (null !== backwardRelationName) {
-		// 					related = oldRelated.getRelated(backwardRelationName);
-		// 					if (related instanceof Collection) {
-		// 						related.suspend(true, token);
-		// 						suspended.push(related);
-		// 						if (!related.removeEntity(this, options)) {
-		// 							ret = false;
-		// 						}
-		// 					}
-		// 				}
-		// 			}
-		// 		}
-		// 	}
+		eventType = {
+			[relation.entityMeta.name]: {
+				[EntityEvent.CHANGED]: fields
+			}
+		};
 
-		// 	if (ret) {
-		// 		if (newRelated instanceof Entity) {
-		// 			newRelated.suspend(true, token);
-		// 			suspended.push(newRelated);
-		// 			for (field in relation.fieldsMap) {
-		// 				fields.push(relation.fieldsMap[field]);
-		// 				newState[field] = newRelated.get(relation.fieldsMap[field]);
-		// 			}
 
-		// 			if (!this.setState(newState, options)) {
-		// 				ret = false;
-		// 			}
+		if (oldRelated instanceof Entity) {
+			if (relation.relayEvents) {
+				this.unrelay(oldRelated);
+			}
 
-		// 			if (updateRelated) {
-		// 				backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
-		// 				if (null !== backwardRelationName) {
-		// 					tmpRelated = newRelated.getRelated(backwardRelationName);
-		// 					if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
-		// 						ret = false;
-		// 					}
-		// 				} else {
-		// 					backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
-		// 					if (null !== backwardRelationName) {
-		// 						related = newRelated.getRelated(backwardRelationName);
-		// 						if (related instanceof Collection) {
-		// 							related.suspend(true, token);
-		// 							suspended.push(related);
-		// 							if (!related.addEntity(this, options)) {
-		// 								ret = false;
-		// 							}
-		// 						}
-		// 					}
-		// 				}
-		// 			}
-		// 		} else if (null !== newRelated) {
-		// 			throw new Error('Relation "' + name + '" in entity "' + this.entityMeta.name + '" must be instance of Entity');
-		// 		} else {
-		// 			for (field in relation.fieldsMap) {
-		// 				fields.push(relation.fieldsMap[field]);
-		// 				newState[field] = this.entityMeta.fieldMap[field].defaultValue;
-		// 			}
+			oldRelated.removeListener(this.onRelatedEntityChanged, this, eventType);
 
-		// 			if (!this.setState(newState, options)) {
-		// 				ret = false;
-		// 			}
-		// 		}			
-		// 	}
-		// } catch (error) {
-		// 	ret = false;
-		// 	throw error;
-		// } finally {
-		// 	if (!ret) {
-		// 		this.setState(oldState, false);
+			if (null !== backwardRelation) {
+				backwardRelationMeta = backwardRelation.relatedMeta;
+				if (backwardRelationMeta instanceof EntityMeta) {
+					if (!oldRelated.setRelated(backwardRelation.name, null, options, force, false)) {
+						ret = false;
+					}
+				} else if (backwardRelationMeta instanceof CollectionMeta) {
+					related = oldRelated.getRelated(backwardRelation.name) as Collection;
+					related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+					if (!related.removeEntity(this, options, force)) {
+						ret = false;
+					}
+				}
+			}
+		}
 
-		// 		if (updateRelated && (newRelated instanceof Entity)) {
-		// 			backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
-		// 			if (null !== backwardRelationName) {
-		// 				if (tmpRelated) {
-		// 					newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
-		// 				}
-		// 			} else {
-		// 				backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
-		// 				if (null !== backwardRelationName) {
-		// 					related = newRelated.getRelated(backwardRelationName);
-		// 					if (related instanceof Collection) {
-		// 						related.removeEntity(this, false);
-		// 					}
-		// 				}
-		// 			}
-		// 		}
+		if (ret) {
+			if (newRelated instanceof Entity) {
+				for (field in relation.foreignKey) {
+					newState[field] = newRelated.get(relation.foreignKey[field]);
+				}
 
-		// 		if (oldRelated instanceof Entity) {
-		// 			if (updateRelated) {
-		// 				backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasOne);
-		// 				if (null !== backwardRelationName) {
-		// 					oldRelated.setRelated(backwardRelationName, this, false, false);
-		// 				} else {
-		// 					backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.HasMany);
-		// 					if (null !== backwardRelationName) {
-		// 						related = oldRelated.getRelated(backwardRelationName);
-		// 						if (related instanceof Collection) {
-		// 							related.addEntity(this, false);
-		// 						}
-		// 					}
-		// 				}
-		// 			}
-		// 			if (relation.relayEvents) {
-		// 				this.relay(oldRelated);
-		// 			}
-		// 		}
+				if (!this.setState(newState, options, force)) {
+					ret = false;
+				}
+			} else if (null !== newRelated) {
+				throw new Error('Relation "' + name + '" in entity "' + this.entityMeta.name + '" must be instance of Entity');
+			} else {
+				for (field in relation.foreignKey) {
+					newState[field] = this.entityMeta.fieldMap[field].defaultValue;
+				}
 
-		// 		for (i = suspended.length - 1; i >= 0; i--) {
-		// 			suspended[i].purgeQueue(token);
-		// 			suspended[i].resume(token);
-		// 		}
-		// 	}
-		// }
+				if (!this.setState(newState, options)) {
+					ret = false;
+				}
+			}			
+		}
 
-		// if (ret) {
-		// 	this._currentRelMap[name] = newRelated;
+		if (ret) {
+			if (newRelated instanceof Entity) {
+				if (null !== backwardRelation) {
+					backwardRelationMeta = backwardRelation.relatedMeta;
+					if (backwardRelationMeta instanceof EntityMeta) {
+						if (!newRelated.setRelated(backwardRelation.name, this, options, force, false)) {
+							ret = false;
+						}
+					} else if (backwardRelationMeta instanceof CollectionMeta) {
+						related = newRelated.getRelated(backwardRelation.name) as Collection;
+						related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+						if (!related.addEntity(this, options, force)) {
+							ret = false;
+						}
+					}
+				}
+			}
+		}
 
-		// 	events = {
-		// 		[relation.entityName]: {
-		// 			[EntityEvent.CHANGED]: fields
-		// 		}
-		// 	};
+		if (ret) {
+			this._currentRelMap[name] = newRelated;
 
-		// 	if (oldRelated) {
-		// 		oldRelated.removeListener(this.onRelatedEntityChanged, this, events);
-		// 	}
-		// 	if (newRelated) {
-		// 		newRelated.addListener(this.onRelatedEntityChanged, this, events, {
-		// 			extra: {
-		// 				name: name
-		// 			}
-		// 		});
-		// 		if (relation.relayEvents) {
-		// 			this.relay(newRelated);
-		// 		}
-		// 	}
+			if (newRelated) {
+				newRelated.addListener(this.onRelatedEntityChanged, this, eventType, {
+					extra: {
+						name: name
+					}
+				});
+				if (relation.relayEvents) {
+					this.relay(newRelated);
+					this.unrelay(newRelated, [TransactionEvent.BEGIN, TransactionEvent.COMMIT, TransactionEvent.ROLLBACK]);
+				}
+			}
+		}
 
-		// 	for (i = suspended.length - 1; i >= 0; i--) {
-		// 		suspended[i].resume(token);
-		// 	}
-		// }
-
-		// return ret;
+		return ret;
 	}
 
-	private _assignHasOne(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, updateRelated: boolean): boolean
+	private _assignHasOne(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, force: boolean, updateRelated: boolean): boolean
 	{
-		return true;
-		
-		// var i: number,
-		// 	tmpRelated: (Entity | Collection),
-		// 	backwardRelationName: string,
-		// 	token: string,
-		// 	suspended: (Entity | Collection)[] = [],
-		// 	ret: boolean = true;
+		var i: number,
+			backwardRelation: Relation = updateRelated ? this.entityMeta.getBackwardRelation(relation) : null,
+			ret: boolean = true;
 
-		// token = this.suspend(true);
-		// suspended.push(this);
-		// try {
-		// 	if (ret && (oldRelated instanceof Entity)) {
-		// 		oldRelated.suspend(true, token);
-		// 		suspended.push(oldRelated);
-		// 		if (relation.relayEvents) {
-		// 			this.unrelay(oldRelated);
-		// 		}
+		if (oldRelated instanceof Entity) {
+			if (relation.relayEvents) {
+				this.unrelay(oldRelated);
+			}
 
-		// 		if (updateRelated) {
-		// 			backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
-		// 			if (null !== backwardRelationName) {
-		// 				if (!oldRelated.setRelated(backwardRelationName, null, options, false)) {
-		// 					ret = false;
-		// 				}
-		// 			}
-		// 		}
-		// 	}
+			if (null !== backwardRelation) {
+				if (!oldRelated.setRelated(backwardRelation.name, null, options, force, false)) {
+					ret = false;
+				}
+			}
+		}
 
-		// 	if (ret) {
-		// 		if (newRelated instanceof Entity) {
-		// 			newRelated.suspend(true, token);
-		// 			suspended.push(newRelated);
+		if (ret) {
+			if (newRelated instanceof Entity) {
+				if (null !== backwardRelation) {
+					if (!newRelated.setRelated(backwardRelation.name, this, options, force, false)) {
+						ret = false;
+					}
+				}
+			} else if (null !== newRelated) {
+				throw new Error('Relation "' + name + '" in entity "' + this.entityMeta.name + '" must be instance of Entity');
+			}		
+		}
 
-		// 			if (updateRelated) {
-		// 				backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
-		// 				if (null !== backwardRelationName) {
-		// 					tmpRelated = newRelated.getRelated(backwardRelationName);
-		// 					if (!newRelated.setRelated(backwardRelationName, this, options, false)) {
-		// 						ret = false;
-		// 					}
-		// 				}
-		// 			}
-		// 		} else if (null !== newRelated) {
-		// 			throw new Error('Relation "' + name + '" in entity "' + this.entityMeta.name + '" must be instance of Entity');
-		// 		}		
-		// 	}
-		// } catch (error) {
-		// 	ret = false;
-		// 	throw error;
-		// } finally {
-		// 	if (!ret) {
-		// 		if (updateRelated && (newRelated instanceof Entity)) {
-		// 			backwardRelationName = newRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
-		// 			if (null !== backwardRelationName) {
-		// 				if (tmpRelated) {
-		// 					newRelated.setRelated(backwardRelationName, tmpRelated, false, false);
-		// 				}
-		// 			}
-		// 		}
+		if (ret) {
+			this._currentRelMap[name] = newRelated;
 
-		// 		if (oldRelated instanceof Entity) {
-		// 			if (updateRelated) {
-		// 				backwardRelationName = oldRelated.findRelationName(this.entityMeta.name, RelationType.BelongsTo);
-		// 				if (null !== backwardRelationName) {
-		// 					oldRelated.setRelated(backwardRelationName, this, false, false);
-		// 				}
-		// 			}
-		// 			if (relation.relayEvents) {
-		// 				this.relay(oldRelated);
-		// 			}
-		// 		}
+			if (relation.relayEvents && newRelated) {
+				this.relay(newRelated);
+				this.unrelay(newRelated, [TransactionEvent.BEGIN, TransactionEvent.COMMIT, TransactionEvent.ROLLBACK]);
+			}
+		}
 
-		// 		for (i = suspended.length - 1; i >= 0; i--) {
-		// 			suspended[i].purgeQueue(token);
-		// 			suspended[i].resume(token);
-		// 		}
-		// 	}
-		// }
-
-		// if (ret) {
-		// 	this._currentRelMap[name] = newRelated;
-
-		// 	if (relation.relayEvents && newRelated) {
-		// 		this.relay(newRelated);
-		// 	}
-
-		// 	for (i = suspended.length - 1; i >= 0; i--) {
-		// 		suspended[i].resume(token);
-		// 	}
-		// }
-
-		// return ret;
+		return ret;
 	}
 
-	private _assignHasMany(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, updateRelated: boolean): boolean
+	private _assignHasMany(name: string, relation: Relation, newRelated: (Entity | Collection), oldRelated: (Entity | Collection), options: boolean | Object, force: boolean, updateRelated: boolean): boolean
 	{
-		return true;
+		var i: number,
+			backwardRelation: Relation = updateRelated ? this.entityMeta.getBackwardRelation(relation) : null,
+			related: Entity,
+			ret: boolean = true,
+			eventType: EventType = {
+				[relation.entityMeta.name]: [CollectionEvent.ADDED, CollectionEvent.REMOVED]
+			};
+
+		if (oldRelated instanceof Collection) {
+			if (relation.relayEvents) {
+				this.unrelay(oldRelated);
+			}
+			oldRelated.removeListener(this.onRelatedCollectionModified, this, eventType);
+			if (null !== backwardRelation) {
+				for (i = 0; i < oldRelated.length; i++) {
+					related = oldRelated.getAt(i);
+					related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+					if (!related.setRelated(backwardRelation.name, null, options, force, false)) {
+						ret = false;
+						break;
+					}
+				}
+			}
+		}
+
+		if (newRelated instanceof Collection) {
+			if (null !== backwardRelation) {
+				for (i = 0; i < newRelated.length; i++) {
+					related = newRelated.getAt(i);
+					related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+					if (!related.setRelated(backwardRelation.name, this, options, force, false)) {
+						ret = false;
+						break;
+					}
+				}
+			}
+		}
+
+		if (ret) {
+			this._currentRelMap[name] = newRelated;
+
+			if (newRelated) {
+				newRelated.addListener(this.onRelatedCollectionModified, this, eventType, {
+					extra: {
+						name: relation.name
+					}
+				});
+				if (relation.relayEvents) {
+					this.relay(newRelated);
+					this.unrelay(newRelated, [TransactionEvent.BEGIN, TransactionEvent.COMMIT, TransactionEvent.ROLLBACK]);
+				}
+			}
+		}
+
+		return ret;
 	}
 
 	private _fillState(state: EntityState, initial: boolean = false): EntityState
@@ -865,7 +942,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return state;
 	}
 
-	private _fillRelMap(relMap: RelationMap, initial: boolean = false): RelationMap
+	private _fillRelMap(relMap: RelatedMap, initial: boolean = false): RelatedMap
 	{
 		var i: number,
 			relationName: string;

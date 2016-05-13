@@ -19,9 +19,9 @@ export class EntityMeta
 
 	private _fields: Field<any>[];
 
-	private _fieldMap: FieldMap;
+	private _fieldMap: FieldMap = {};
 
-	private _fieldNames: string[];
+	private _fieldNames: string[] = [];
 
 	private _relationMap: RelationMap = {};
 
@@ -29,23 +29,41 @@ export class EntityMeta
 
 	private _relations: Relation[] = [];
 
-	public constructor(name: string, entityClass: EntityClass, primaryKey: PrimaryKey, fields: Field<any>[])
+	public constructor(name: string, entityClass: EntityClass, primaryKey: PrimaryKey, fields: Field<any>[], relations: Relation[] = [])
 	{
-		var i: number;
+		var i: number,
+			field: Field<any>,
+			fieldName: string,
+			rel: Relation,
+			relName: string;
 
 		this._name = name;
 		this._entityClass = entityClass;
 		this._primaryKey = primaryKey;
 		this._fields = fields;
+		this._relations = relations;
 
-		this._fieldMap = {};
-		this._fieldNames = [];
 		for (i = 0; i < fields.length; i++) {
-			if (this._fieldMap.hasOwnProperty(fields[i].name)) {
-				throw new Error('Duplicate fields: ' + fields[i].name);
+			field = fields[i];
+			fieldName = field.name;
+			if (this._fieldNames.indexOf(fieldName) > -1) {
+				throw new Error('Duplicate fields: ' + fieldName);
 			}
-			this._fieldMap[fields[i].name] = fields[i];
-			this._fieldNames.push(fields[i].name);
+			this._fieldMap[fieldName] = field;
+			this._fieldNames.push(fieldName);
+		}
+
+		for (i = 0; i < relations.length; i++) {
+			rel = relations[i];
+			relName = rel.name;
+			if (this._relationNames.indexOf(relName) > -1) {
+				throw new Error('Duplicate relations: ' + relName);
+			}
+			if (this._fieldNames.indexOf(relName) > -1) {
+				throw new Error('Relation can\'t has the same name as field: ' + relName);
+			}
+			this._relationMap[relName] = rel;
+			this._relationNames.push(relName);
 		}
 	}
 
@@ -102,21 +120,6 @@ export class EntityMeta
 	public getField<T>(name: string): Field<T>
 	{
 		return this.hasField(name) ? this._fieldMap[name] : null;
-	}
-
-	public addRelation(relation: Relation | Relation[]): EntityMeta
-	{
-		var i: number;
-		if (relation instanceof Array) {
-			for (i = 0; i < relation.length; i++) {
-				this.addRelation(relation[i]);
-			}
-		} else {
-			this._relations.push(relation);
-			this._relationMap[relation.name] = relation;
-			this._relationNames.push(relation.name);
-		}
-		return this;
 	}
 
 	public hasRelation(name: string): boolean
