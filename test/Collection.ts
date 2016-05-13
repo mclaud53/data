@@ -393,7 +393,7 @@ describe('Collection', function()
 			entity: Entity = new SimpleEntity(),
 			transaction: Transaction;
 
-		instance.beginTransaction(true);
+		instance.beginTransaction(null, true);
 
 		assert.equal(instance.getAt(0).hasTransaction(), true, 'Transaction must be started');
 		instance.addEntity(entity);

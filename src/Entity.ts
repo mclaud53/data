@@ -165,11 +165,20 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return this._transaction;
 	}
 
-	public beginTransaction(deep: boolean = false, transaction: Transaction = null, options: Object = {}): Transaction
+	public beginTransaction(transactionId: string | Transaction = null, deep: boolean = false, options: Object = {}): Transaction
 	{
 		var i: number,
 			rel: Relation,
-			e: TransactionEvent;
+			e: TransactionEvent,
+			transaction: Transaction = null;
+
+		if (transactionId instanceof Transaction) {
+			transaction = transactionId;
+		} else if (null !== transactionId) {
+			transaction = Registry.getInstance()
+				.getTransactionRegistry()
+				.getByUUID(transactionId as string);
+		}
 
 		if (this.hasTransaction()) {
 			if (this._transaction === transaction) {
@@ -213,9 +222,9 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 				// }
 
 				if (this._currentRelMap[rel.name] instanceof Entity) {
-					this._currentRelMap[rel.name].beginTransaction(deep, transaction, options);
+					this._currentRelMap[rel.name].beginTransaction(transaction, deep, options);
 				} else if (this._currentRelMap[rel.name] instanceof Collection) {
-					this._currentRelMap[rel.name].beginTransaction(deep, transaction, options);
+					this._currentRelMap[rel.name].beginTransaction(transaction, deep, options);
 				}
 			}
 		}
@@ -420,11 +429,11 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		}
 
 		if (newRelated) {
-			newRelated.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+			newRelated.beginTransaction(this.getTransaction(), this._transactionDeep, options);
 		}
 
 		if (oldRelated) {
-			oldRelated.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+			oldRelated.beginTransaction(this.getTransaction(), this._transactionDeep, options);
 		}
 
 		switch (relation.type) {
@@ -473,41 +482,41 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return true;
 	}
 
-	public clear(): void
-	{
-		var i: number,
-			field: string;
+	// public clear(): void
+	// {
+	// 	var i: number,
+	// 		field: string;
 
-		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
-			field = this.entityMeta.fieldNames[i];
+	// 	for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+	// 		field = this.entityMeta.fieldNames[i];
 
-			this._initialState[field] = this.entityMeta.fieldMap[field].defaultValue;
-		}
-	}
+	// 		this._initialState[field] = this.entityMeta.fieldMap[field].defaultValue;
+	// 	}
+	// }
 
-	public revert(): void
-	{
-		var i: number,
-			field: string;
+	// public revert(): void
+	// {
+	// 	var i: number,
+	// 		field: string;
 
-		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
-			field = this.entityMeta.fieldNames[i];
+	// 	for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+	// 		field = this.entityMeta.fieldNames[i];
 
-			this._currentState[field] = this._initialState[field];
-		}
-	}
+	// 		this._currentState[field] = this._initialState[field];
+	// 	}
+	// }
 
-	public flush(): void
-	{
-		var i: number,
-			field: string;
+	// public flush(): void
+	// {
+	// 	var i: number,
+	// 		field: string;
 
-		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
-			field = this.entityMeta.fieldNames[i];
+	// 	for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+	// 		field = this.entityMeta.fieldNames[i];
 
-			this._initialState[field] = this._currentState[field];
-		}
-	}
+	// 		this._initialState[field] = this._currentState[field];
+	// 	}
+	// }
 
 	private onTransactionCommit(event: TransactionEvent, extra: Object): void
 	{
@@ -687,7 +696,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		if (!this.hasTransaction()) {
 			for (i = 0; i < e.addedEntites.length; i++) {
 				if (e.addedEntites[i].hasTransaction()) {
-					this.beginTransaction(false, e.addedEntites[i].getTransaction());
+					this.beginTransaction(e.addedEntites[i].getTransaction());
 					break;
 				}
 			}
@@ -696,7 +705,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		if (!this.hasTransaction()) {
 			for (i = 0; i < e.removedEntites.length; i++) {
 				if (e.removedEntites[i].hasTransaction()) {
-					this.beginTransaction(false, e.removedEntites[i].getTransaction());
+					this.beginTransaction(e.removedEntites[i].getTransaction());
 					break;
 				}
 			}
@@ -707,12 +716,12 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		}
 
 		for (i = 0; i < e.addedEntites.length; i++) {
-			e.addedEntites[i].beginTransaction(false, this.getTransaction());
+			e.addedEntites[i].beginTransaction(this.getTransaction());
 			e.addedEntites[i].setRelated(backwardRelation.name, this, e.options, true, false);
 		}
 
 		for (i = 0; i < e.removedEntites.length; i++) {
-			e.removedEntites[i].beginTransaction(false, this.getTransaction());
+			e.removedEntites[i].beginTransaction(this.getTransaction());
 			e.removedEntites[i].setRelated(backwardRelation.name, null, e.options, true, false);
 		}
 
@@ -760,7 +769,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 					}
 				} else if (backwardRelationMeta instanceof CollectionMeta) {
 					related = oldRelated.getRelated(backwardRelation.name) as Collection;
-					related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+					related.beginTransaction(this.getTransaction(), this._transactionDeep, options);
 					if (!related.removeEntity(this, options, force)) {
 						ret = false;
 					}
@@ -800,7 +809,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 						}
 					} else if (backwardRelationMeta instanceof CollectionMeta) {
 						related = newRelated.getRelated(backwardRelation.name) as Collection;
-						related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+						related.beginTransaction(this.getTransaction(), this._transactionDeep, options);
 						if (!related.addEntity(this, options, force)) {
 							ret = false;
 						}
@@ -888,7 +897,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			if (null !== backwardRelation) {
 				for (i = 0; i < oldRelated.length; i++) {
 					related = oldRelated.getAt(i);
-					related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+					related.beginTransaction(this.getTransaction(), this._transactionDeep, options);
 					if (!related.setRelated(backwardRelation.name, null, options, force, false)) {
 						ret = false;
 						break;
@@ -901,7 +910,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 			if (null !== backwardRelation) {
 				for (i = 0; i < newRelated.length; i++) {
 					related = newRelated.getAt(i);
-					related.beginTransaction(this._transactionDeep, this.getTransaction(), options);
+					related.beginTransaction(this.getTransaction(), this._transactionDeep, options);
 					if (!related.setRelated(backwardRelation.name, this, options, force, false)) {
 						ret = false;
 						break;

@@ -154,7 +154,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 
 		if (this.hasTransaction() && this._transactionDeep) {
 			for (i = 0; i < addedEntities.length; i++) {
-				addedEntities[i].beginTransaction(true, this._transaction, options);
+				addedEntities[i].beginTransaction(this._transaction, true, options);
 			}
 		}
 
@@ -354,10 +354,19 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 		return this._transaction;
 	}
 
-	public beginTransaction(deep: boolean = false, transaction: Transaction = null, options: Object = {}): Transaction
+	public beginTransaction(transactionId: string | Transaction = null, deep: boolean = false, options: Object = {}): Transaction
 	{
 		var i: number,
-			e: TransactionEvent;
+			e: TransactionEvent,
+			transaction: Transaction = null;
+
+		if (transactionId instanceof Transaction) {
+			transaction = transactionId;
+		} else if (null !== transactionId) {
+			transaction = Registry.getInstance()
+				.getTransactionRegistry()
+				.getByUUID(transactionId as string);
+		}
 
 		if (this.hasTransaction()) {
 			if (this._transaction === transaction) {
@@ -394,7 +403,7 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 			this._transactionDeep = deep;
 
 			for (i = 0; i < this._currentEntities.length; i++) {
-				this._currentEntities[i].beginTransaction(true, transaction, options);
+				this._currentEntities[i].beginTransaction(transaction, true, options);
 			}
 		}
 
