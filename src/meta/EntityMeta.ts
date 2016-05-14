@@ -17,6 +17,8 @@ export class EntityMeta
 
 	private _primaryKey: PrimaryKey;
 
+	private _foreignKeys: string[] = [];
+
 	private _fields: Field<any>[];
 
 	private _fieldMap: FieldMap = {};
@@ -64,6 +66,15 @@ export class EntityMeta
 			}
 			this._relationMap[relName] = rel;
 			this._relationNames.push(relName);
+
+			for (fieldName in rel.foreignKey) {
+				if (this._fieldNames.indexOf(fieldName) === -1) {
+					throw new Error('Foreign field "' + fieldName + '" of relation "' + relName + '" isn\'t declared in entity "' + name + '"');
+				}
+				if (this._foreignKeys.indexOf(fieldName) === -1) {
+					this._foreignKeys.push(fieldName);
+				}
+			}
 		}
 	}
 
@@ -80,6 +91,11 @@ export class EntityMeta
 	public get primaryKey(): PrimaryKey
 	{
 		return this._primaryKey;
+	}
+
+	public get foreignKeys(): string[]
+	{
+		return this._foreignKeys;
 	}
 
 	public get fields(): Field<any>[]

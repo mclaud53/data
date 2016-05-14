@@ -56,7 +56,7 @@ describe('Entity', function()
 		.register([
 			new AccountCollectionMeta(),
 			new CardCollectionMeta()
-		])
+		], true);
 
 	it('creation', function ()
 	{

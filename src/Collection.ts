@@ -5,6 +5,7 @@ import {Transaction} from './Transaction';
 import {CollectionEvent} from './event/CollectionEvent';
 import {TransactionEvent} from './event/TransactionEvent';
 import {CollectionMeta} from './meta/CollectionMeta';
+import {EntityMeta} from './meta/EntityMeta';
 
 export abstract class Collection extends EventDispatcher<Event<any>, any>
 {
@@ -58,6 +59,16 @@ export abstract class Collection extends EventDispatcher<Event<any>, any>
 	public get uuid(): string
 	{
 		return this._uuid;
+	}
+
+	public get collectionMeta(): CollectionMeta
+	{
+		return this._collectionMeta;
+	}
+
+	public get entityMeta(): EntityMeta
+	{
+		return this._collectionMeta.entityMeta;
 	}
 
 	public get added(): Entity[]

@@ -41,7 +41,7 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 
 	private _transactionRelMap: RelatedMap = {};
 
-	public constructor(state: EntityState = {}, relMap: RelatedMap = {}, isNew: boolean = true, readOnly: boolean = false, uuid: string = null)
+	public constructor(state: EntityState = {}, relMap: RelatedMap = {}, readOnly: boolean = false, uuid: string = null)
 	{
 		super();
 
@@ -117,6 +117,36 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 				this.setRelated(name, value, false, true);
 			}
 		}
+
+		this._fillState(this._initialState);
+	}
+
+	public get isNew(): boolean
+	{
+		var i: number,
+			name: string,
+			ret: boolean;
+
+		if (this._entityMeta.primaryKey instanceof Array) {
+			if (1 === this._entityMeta.primaryKey.length) {
+				name = this._entityMeta.primaryKey[0];
+				ret = this.get(name) === this.entityMeta.getField(name).defaultValue;
+			} else {
+				ret = true;
+				for (i = 0; i < this._entityMeta.primaryKey.length; i++) {
+					name = this._entityMeta.primaryKey[0];
+					if (this.get(name) !== this.entityMeta.getField(name).defaultValue) {
+						ret = false;
+						break;
+					}
+				}
+			}
+		} else {
+			name = this._entityMeta.primaryKey as string;
+			ret = this.get(name) === this.entityMeta.getField(name).defaultValue;
+		}
+
+		return ret;
 	}
 
 	public get entityMeta(): EntityMeta
@@ -145,9 +175,61 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 		return ret;
 	}
 
+	public get idMap(): Object
+	{
+		var i: number,
+			name: string,
+			ret: Object = {};
+
+		if (this._entityMeta.primaryKey instanceof Array) {
+			for (i = 0; i < this._entityMeta.primaryKey.length; i++) {
+				name = this._entityMeta.primaryKey[i];
+				ret[name] = this.get(name);
+			}
+		} else {
+			name = this._entityMeta.primaryKey as string;
+			ret[name] = this.get(name);
+		}
+
+		return ret;
+	}
+
 	public get uuid(): string
 	{
 		return this._uuid;
+	}
+
+	public get isDirty(): boolean
+	{
+		var i: number,
+			field: string;
+
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
+			if (this.get(field) !== this.get(field, true)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	public get diff(): EntityState
+	{
+		var i: number,
+			field: string,
+			value: any,
+			ret: EntityState = {};
+
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
+			value = this.get(field);
+			if (value !== this.get(field, true)) {
+				ret[field] = value;
+			}
+		}
+
+		return ret;
 	}
 
 	public get readOnly(): boolean
@@ -505,20 +587,20 @@ export abstract class Entity extends EventDispatcher<Event<any>, any>
 	// 	return ret;
 	// }
 
-	// public revert(options: boolean | Object = {}, force: boolean = false): boolean
-	// {
-	// 	var i: number,
-	// 		field: string,
-	// 		state: EntityState = {};
+	public revert(options: boolean | Object = {}, force: boolean = false): boolean
+	{
+		var i: number,
+			field: string,
+			state: EntityState = {};
 
-	// 	for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
-	// 		field = this.entityMeta.fieldNames[i];
+		for (i = 0; i < this.entityMeta.fieldNames.length; i++) {
+			field = this.entityMeta.fieldNames[i];
 
-	// 		state[field] = this._initialState[field];
-	// 	}
+			state[field] = this._initialState[field];
+		}
 
-	// 	return this.setState(state, options, force);
-	// }
+		return this.setState(state, options, force);
+	}
 
 	// public flush(state: EntityState = {}): void
 	// {
