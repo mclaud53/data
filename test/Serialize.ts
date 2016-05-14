@@ -227,18 +227,37 @@ describe('Serialize', function()
 		assert.equal(json, '{}');
 	});
 
-	it('serialize !deep (hasOne) & rel & backRel', function() {
+	it('serialize !deep (hasOne) & rel & backRel', function ()
+	{
 		var data: Object = instance.serialize(account1, { rel: true, backRel: true }),
 			json: string = JSON.stringify(data);
 
 		assert.equal(json, '{}');
 	});
 
-	it('serialize !deep (hasMany) & rel & backRel', function() {
+	it('serialize !deep (hasMany) & rel & backRel', function ()
+	{
 		var data: Object = instance.serialize(user1, { rel: true, backRel: true }),
 			json: string = JSON.stringify(data);
 
 		assert.equal(json, '{}');
 	});		
+
+	it('serialize deep (hasMany) & rel & backRel & prefix', function ()
+	{
+		var data: Object = instance.serialize(user1, { deep: true, rel: true, backRel: true, prefix: 'p-'}),
+			json: string = JSON.stringify(data);
+
+		assert.equal(json, '{"User":{"p-User-1":{"userId":1,"card":["p-Card-1","p-Card-2"]}},"Card":{"p-Card-1":{"cardId":1},"p-Card-2":{"cardId":2}},"Account":{"p-Account-1":{"accountId":1,"card":"p-Card-1"},"p-Account-2":{"accountId":2,"card":"p-Card-2"}}}');
+	});
+
+	it('serialize mixed array', function ()
+	{
+		var data: Object = instance.serialize([user1, user2.getRelated<CardCollection>('card')], { deep: true, backRel: true}),
+			json: string = JSON.stringify(data);
+
+		assert.equal(json, '{"User":{"User-1":{"userId":1},"User-2":{"name":"Eddard Stark"}},"Card":{"Card-1":{"cardId":1},"Card-2":{"cardId":2},"Card-3":{"number":"#3"},"Card-4":{"number":"#4"}},"Account":{"Account-1":{"accountId":1},"Account-2":{"accountId":2},"Account-3":{"balance":30},"Account-4":{"balance":40}}}');
+	});
+
 
 });

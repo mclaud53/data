@@ -24,11 +24,20 @@ export interface Serialized
 
 export class Serialize
 {
-	public serialize(obj: Entity | Collection, options: SerializeOptions = {}): Serialized
+	public serialize(obj: Entity | Collection | (Entity | Collection)[], options: SerializeOptions = {}): Serialized
 	{
-		var ret: Serialized = {},
+		var i: number,
+			ret: Serialized = {},
 			processed: (Collection | Entity)[] = [];
-		this._serialize(obj, options, ret, processed);
+
+		if (obj instanceof Array) {
+			for (i = 0; i < obj.length; i++) {
+				this._serialize(obj[i], options, ret, processed);	
+			}
+		} else {
+			this._serialize(obj, options, ret, processed);
+		}
+
 		return ret;
 	}
 
